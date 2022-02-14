@@ -1,0 +1,23 @@
+
+/home/robotis/catkin_ws/src/ROBOTIS-OP3/op3_online_walking_module/src
+
+
+robotis
+111111
+sudo bash
+111111
+cd catkin_ws/   
+catkin_make
+
+
+robotis
+111111
+sudo bash
+111111
+roslaunch op3_manager op3_manager.launch
+
+
+sudo bash
+111111
+roslaunch op3_gui_demo op3_demo.launch
+

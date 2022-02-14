@@ -1,0 +1,6 @@
+walking_param :
+  dsp_ratio : 0.2
+  lipm_height : 0.07
+  foot_height_max : 0.05
+  zmp_offset_x : 0.0
+  zmp_offset_y : 0.0
