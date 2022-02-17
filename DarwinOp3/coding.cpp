@@ -88,9 +88,10 @@ int tq_stand = 10000;//0;//3000;//4000/samplingTime;
 //////////////////////////////////////////////////////////
 #define torqueModeOn 1
 #define torqueModeStand 0
-#define GravityCompensation 0
+#define GravityCompensation 1
 #define jointCtrlOn 0
 #define iCtrlOn 0
+#define onlyOneMotorTorque 1
 double Tr=0.015;//0;//0;//0.02;//
 double Tr_walk_ssp=0.015;
 double Tr_walk_dsp=0.015;
@@ -6675,8 +6676,8 @@ void Walk::run() {
 			_th_encoder[5] = 0;
 			_th_encoder[6] = 0;
 			_th_encoder[7] = 0;
-			_th_encoder[8] = 0.523599;
-			_th_encoder[9] = 0;
+			_th_encoder[8] = 0;
+			_th_encoder[9] = 1.57;
 			_th_encoder[10] = 0;
 			_th_encoder[11] = 0;
 			forwardkinematics(_th_encoder);
@@ -6691,12 +6692,25 @@ void Walk::run() {
 			_th_encoder[5] = 0;
 			_th_encoder[6] = 0;
 			_th_encoder[7] = 0;
-			_th_encoder[8] = 0.523599;
-			_th_encoder[9] = 0;
+			_th_encoder[8] = 0;
+			_th_encoder[9] = 1.57-_sn*0.001;
 			_th_encoder[10] = 0;
 			_th_encoder[11] = 0;
 			forwardkinematics(_th_encoder);
 		}
+
+		_theta_p.x[0][0] = _th_encoder[0];
+		_theta_p.x[1][0] = _th_encoder[1];
+		_theta_p.x[2][0] = _th_encoder[2];
+		_theta_p.x[3][0] = _th_encoder[3];
+		_theta_p.x[4][0] = _th_encoder[4];
+		_theta_p.x[5][0] = _th_encoder[5];
+		_theta_p.x[6][0] = _th_encoder[6];
+		_theta_p.x[7][0] = _th_encoder[7];
+		_theta_p.x[8][0] = _th_encoder[8];
+		_theta_p.x[9][0] = _th_encoder[9];
+		_theta_p.x[10][0] = _th_encoder[10];
+		_theta_p.x[11][0] = _th_encoder[11];
 		// else
 		// {
 		// 	th_error=0;
@@ -6736,7 +6750,6 @@ void Walk::run() {
 		_theta_p.x[11][0] = _th_torque[11];
 #endif		
 		
-
 		RR01.x[0][0] = TRB1[0][0];
 		RR01.x[0][1] = TRB1[0][1];
 		RR01.x[0][2] = TRB1[0][2];
@@ -6797,7 +6810,6 @@ void Walk::run() {
 		RR45.x[2][1] = TR45[2][1];
 		RR45.x[2][2] = TR45[2][2];
 
-
 		RR56.x[0][0] = TR56[0][0];
 		RR56.x[0][1] = TR56[0][1];
 		RR56.x[0][2] = TR56[0][2];
@@ -6810,7 +6822,6 @@ void Walk::run() {
 		RR56.x[2][1] = TR56[2][1];
 		RR56.x[2][2] = TR56[2][2];
 
-
 		RR67.x[0][0] = TR6E[0][0];
 		RR67.x[0][1] = TR6E[0][1];
 		RR67.x[0][2] = TR6E[0][2];
@@ -6822,7 +6833,6 @@ void Walk::run() {
 		RR67.x[2][0] = TR6E[2][0];
 		RR67.x[2][1] = TR6E[2][1];
 		RR67.x[2][2] = TR6E[2][2];
-
 
 		RL01.x[0][0] = TLB1[0][0];
 		RL01.x[0][1] = TLB1[0][1];
@@ -6884,7 +6894,6 @@ void Walk::run() {
 		RL45.x[2][1] = TL45[2][1];
 		RL45.x[2][2] = TL45[2][2];
 
-
 		RL56.x[0][0] = TL56[0][0];
 		RL56.x[0][1] = TL56[0][1];
 		RL56.x[0][2] = TL56[0][2];
@@ -6896,7 +6905,6 @@ void Walk::run() {
 		RL56.x[2][0] = TL56[2][0];
 		RL56.x[2][1] = TL56[2][1];
 		RL56.x[2][2] = TL56[2][2];
-
 
 		RL67.x[0][0] = TL6E[0][0];
 		RL67.x[0][1] = TL6E[0][1];
@@ -6992,7 +7000,6 @@ void Walk::run() {
 		PR67.x[1][0] = TR6E[1][3];
 		PR67.x[2][0] = TR6E[2][3];
 	
-
 		PL01.x[0][0] = TLB1[0][3];
 		PL01.x[1][0] = TLB1[1][3];
 		PL01.x[2][0] = TLB1[2][3];
@@ -7041,14 +7048,12 @@ void Walk::run() {
 		PositionppL.x[0][5] = PL56;
 		PositionppL.x[0][6] = PL67;
 
-
 		ddq_Jdot_R_p.x[0][0] = 0.0;
 		ddq_Jdot_R_p.x[1][0] = 0.0;
 		ddq_Jdot_R_p.x[2][0] = 0.0;
 		ddq_Jdot_R_p.x[3][0] = 0.0;
 		ddq_Jdot_R_p.x[4][0] = 0.0;
 		ddq_Jdot_R_p.x[5][0] = 0.0;
-  
   
 		ddq_Jdot_R_p.x[0][1] = 0.0;
 		ddq_Jdot_R_p.x[1][1] = 0.0;
@@ -7057,14 +7062,12 @@ void Walk::run() {
 		ddq_Jdot_R_p.x[4][1] = 0.0;
 		ddq_Jdot_R_p.x[5][1] = 0.0;
 
-
 		ddq_Jdot_R_p.x[0][2] = 0.0;
 		ddq_Jdot_R_p.x[1][2] = 0.0;
 		ddq_Jdot_R_p.x[2][2] = 0.0;
 		ddq_Jdot_R_p.x[3][2] = 0.0;
 		ddq_Jdot_R_p.x[4][2] = 0.0;
 		ddq_Jdot_R_p.x[5][2] = 0.0;
-
 
 		ddq_Jdot_R_p.x[0][3] = 0.0;
 		ddq_Jdot_R_p.x[1][3] = 0.0;
@@ -7073,14 +7076,12 @@ void Walk::run() {
 		ddq_Jdot_R_p.x[4][3] = 0.0;
 		ddq_Jdot_R_p.x[5][3] = 0.0;
 
-  
 		ddq_Jdot_R_p.x[0][4] = 0.0;
 		ddq_Jdot_R_p.x[1][4] = 0.0;
 		ddq_Jdot_R_p.x[2][4] = 0.0;
 		ddq_Jdot_R_p.x[3][4] = 0.0;
 		ddq_Jdot_R_p.x[4][4] = 0.0;
 		ddq_Jdot_R_p.x[5][4] = 0.0;
-
 
 		ddq_Jdot_R_p.x[0][5] = 0.0;
 		ddq_Jdot_R_p.x[1][5] = 0.0;
@@ -7089,26 +7090,21 @@ void Walk::run() {
 		ddq_Jdot_R_p.x[4][5] = 0.0;
 		ddq_Jdot_R_p.x[5][5] = 0.0;
 
-		  
 		_w_LE_n.x[0][0]=0;
 		_w_LE_n.x[1][0]=0;
 		_w_LE_n.x[2][0]=0;
-
 
 		_w_RE_n.x[0][0]=0;
 		_w_RE_n.x[1][0]=0;
 		_w_RE_n.x[2][0]=0;
 
-
 		_dw_LE_n.x[0][0]=0;
 		_dw_LE_n.x[1][0]=0;
 		_dw_LE_n.x[2][0]=0;
 
-
 		_dw_RE_n.x[0][0]=0;
 		_dw_RE_n.x[1][0]=0;
 		_dw_RE_n.x[2][0]=0;
-
 
 		Mdth_d.x[0][0]=0.0;
 		Mdth_d.x[1][0]=0.0;
@@ -7122,8 +7118,6 @@ void Walk::run() {
 		Mdth_d.x[9][0]=0.0;
 		Mdth_d.x[10][0]=0.0;
 		Mdth_d.x[11][0]=0.0;
-
-		
 
 		// printf("\nrne encodor %lf %lf %lf %lf %lf %lf $$$$ %lf %lf %lf %lf %lf %lf",_th_encoder[0]*180/pi,_th_encoder[1]*180/pi,_th_encoder[2]*180/pi,_th_encoder[3]*180/pi,_th_encoder[4]*180/pi,_th_encoder[5]*180/pi,_th_encoder[6]*180/pi,_th_encoder[7]*180/pi,_th_encoder[8]*180/pi,_th_encoder[9]*180/pi,_th_encoder[10]*180/pi,_th_encoder[11]*180/pi);
 		// printf("\ndes:hipyawR=    %lf   hipyawL=    %lf ,enc:hipyawR=      %lf   hipyawL=    %lf",_th_torque[0]*180/pi, _th_torque[11]*180/pi,_th_encoder[0]*180/pi,_th_encoder[11]*180/pi);
@@ -7143,7 +7137,8 @@ void Walk::run() {
 		// else{
 		// 	_th_current_p =_th_current_n;
 		// }
-		_th_current_p =_th_current_n;		
+		_th_current_p =_th_current_n;	
+
 		_th_current_n.x[0][0]=_th_encoder[0];
 		_th_current_n.x[1][0]=_th_encoder[1];
 		_th_current_n.x[2][0]=_th_encoder[2];
@@ -7178,8 +7173,11 @@ void Walk::run() {
 		{
 			Mdth = s_vectorminus121_121(_th_current_n, _th_current_p);
 		}
+
+#if (GravityCompensation==1)		
 		_kv=0;
 		_kp=0;
+#endif
 		// double Tr_anklePitch=0.015;//0;//0.02;//
 		// double _kv_anklePitch=2*(1.8/Tr_anklePitch);//0;//2*(1.8/Tr);//180;//2*(1.8/Tr);
 		// double _kp_anklePitch=(1.8/Tr_anklePitch)*(1.8/Tr_anklePitch);//0;//(1.8/Tr)*(1.8/Tr);//8100;//(1.8/Tr)*(1.8/Tr);
@@ -7231,7 +7229,6 @@ void Walk::run() {
 
 		//f,n 
 
-
 		fr77.x[0][0] =  0;
 		fr77.x[1][0] =  0;
 		fr77.x[2][0] =  0;//-11.672488;//-ps_RforceZ_last;//-force_F_R[2];//-ps_RforceZ_last;//-forceZr;//-force_F_R[2];//-d_Fz_DSP;//
@@ -7240,16 +7237,12 @@ void Walk::run() {
 
 		nr77.x[0][0] =  0;//0.142319;//-ps_RtorqueX_last;//-torque_F_R[0];//-ps_RtorqueX_last;//-torquexr;//-torque_F_R[0];//0;//
 		nr77.x[1][0] =  0;//0.053947;//-ps_RtorqueY_last;//-torque_F_R[1];//-ps_RtorqueY_last;//-torqueyr;//-torque_F_R[1];//0;//
-		nr77.x[2][0] =0;
+		nr77.x[2][0] =	0;
 		// printf("\nR : fz=%lf tx=%lf ty=%lf",ps_RforceZ_last,ps_RtorqueX_last,ps_RtorqueY_last);
-
 
 		//RNE
 		//outward iteration
 		//Matrix_M31X7 RNEwr, RNEdwr, RNEdvr, RNEdvcr, RNEFr, RNENr, RNEfr, RNEnr;
-
-
-
 
 		RNEwr.x[0][0] = wr00;
 		RNEdwr.x[0][0] = dwr00;
@@ -7260,7 +7253,6 @@ void Walk::run() {
 
 		RNEfr.x[0][6] = fr77;
 		RNEnr.x[0][6] = nr77;
-
 
 		for (k = 0; k < 6; k++) { ///outward iteration
 
@@ -7323,7 +7315,6 @@ void Walk::run() {
 				RNENr.x[0][k + 1] = vectorplus31_31(RNENr_1, RNENr_3);//3x1
 			}
 
-
 			for (k = 6; k > 0; k = k - 1) {  ///inward iteration
 
 				RNEfr_1 = productmatrix33_31(RR.x[k][0], RNEfr.x[0][k]);//3x1
@@ -7335,7 +7326,6 @@ void Walk::run() {
 				RNEnr_3 = crossproductmatrix31_31(PositionppR.x[0][k], RNEfr_1);//3x1
 
 				RNEnr.x[0][k - 1] = vectorplus31_31_31_31(RNENr.x[0][k], RNEnr_1, RNEnr_2, RNEnr_3);//3x1
-
 
 				helpFinaltorquer = RNEnr.x[0][k - 1];//3x1
 				helpFinaltorquer_1= transposeMatrix_31(helpFinaltorquer);//1x3
@@ -7390,7 +7380,6 @@ void Walk::run() {
 
 		RNEfl.x[0][6] = fl77;
 		RNEnl.x[0][6] = nl77;
-
 
 		// B->R
 			for (k = 0; k < 6; k++) { ///outward iteration
@@ -7498,6 +7487,8 @@ void Walk::run() {
 		// printf("\nhiproll    /des :R=%6lf ,L=%6lf /enc:R=%6lf ,L=%6lf /errth:R=%6lf ,L=%6lf /errdth:R=%6lf ,L=%6lf /torque:R=%6lf ,-L=%6lf",_th_torque[4]*180/pi, _th_torque[7]*180/pi,_th_encoder[4]*180/pi,_th_encoder[7]*180/pi,_error_th_1.x[4][0],_error_th_1.x[7][0],_error_dth_1.x[4][0],_error_dth_1.x[7][0],torque[4],-torque[7]);
 		// printf("\nhipyaw     /des :R=%6lf ,L=%6lf /enc:R=%6lf ,L=%6lf /errth:R=%6lf ,L=%6lf /errdth:R=%6lf ,L=%6lf /torque:R=%6lf ,-L=%6lf",_th_torque[5]*180/pi, _th_torque[6]*180/pi,_th_encoder[5]*180/pi,_th_encoder[6]*180/pi,_error_th_1.x[5][0],_error_th_1.x[6][0],_error_dth_1.x[5][0],_error_dth_1.x[6][0],torque[5],-torque[6]);
 		
+#if (onlyOneMotorTorque==0)		
+		
 		mMotors[ankleRollR]->setTorque(-torque[0]);
 		mMotors[anklePitchR]->setTorque(-torque[1]);
 		mMotors[kneePitchR]->setTorque(torque[2]);
@@ -7510,7 +7501,53 @@ void Walk::run() {
 		mMotors[kneePitchL]->setTorque(torque[9]);
 		mMotors[anklePitchL]->setTorque(-torque[10]);
 		mMotors[ankleRollL]->setTorque(torque[11]);
-
+#elif (onlyOneMotorTorque==1)
+		if(_sn==0)
+		{
+			mMotors[ankleRollR]->setTorque(0);
+			mMotors[anklePitchR]->setTorque(0);
+			mMotors[kneePitchR]->setTorque(0);
+			mMotors[hipPitchR]->setTorque(0);
+			mMotors[hipRollR]->setTorque(0);
+			mMotors[hipYawR]->setTorque(0);
+			mMotors[hipYawL]->setTorque(0);
+			mMotors[hipRollL]->setTorque(0);
+			mMotors[hipPitchL]->setTorque(0);
+			mMotors[kneePitchL]->setTorque(0);
+			mMotors[anklePitchL]->setTorque(0);
+			mMotors[ankleRollL]->setTorque(0);
+			
+			mMotors[ankleRollR]->setPosition(0);
+			mMotors[anklePitchR]->setPosition(0);
+			mMotors[kneePitchR]->setPosition(0);
+			mMotors[hipPitchR]->setPosition(0);
+			mMotors[hipRollR]->setPosition(0);
+			mMotors[hipYawR]->setPosition(0);
+			mMotors[hipYawL]->setPosition(0);
+			mMotors[hipRollL]->setPosition(0);
+			mMotors[hipPitchL]->setPosition(0);
+			mMotors[kneePitchL]->setPosition(1.57);
+			mMotors[anklePitchL]->setPosition(0);
+			mMotors[ankleRollL]->setPosition(0);
+		}
+		else
+		{
+			mMotors[ankleRollR]->setPosition(0);
+			mMotors[anklePitchR]->setPosition(0);
+			mMotors[kneePitchR]->setPosition(0);
+			mMotors[hipPitchR]->setPosition(0);
+			mMotors[hipRollR]->setPosition(0);
+			mMotors[hipYawR]->setPosition(0);
+			mMotors[hipYawL]->setPosition(0);
+			mMotors[hipRollL]->setPosition(0);
+			mMotors[hipPitchL]->setPosition(0);
+			mMotors[kneePitchL]->setPosition(0);
+			mMotors[kneePitchL]->setTorque(torque[9]);
+			mMotors[anklePitchL]->setPosition(0);
+			mMotors[ankleRollL]->setPosition(0);
+		}
+		printf("1.57-_sn*0.001=%lf\n",1.57-_sn*0.001);
+#endif
 		printf("\n-torque[0]= %lf,-torque[1]= %lf,torque[2]= %lf,torque[3]= %lf, torque[4]= %lf,torque[5]= %lf",
 		-torque[0],-torque[1],torque[2],torque[3],torque[4],torque[5]);
 		printf("\ntorque[11]= %lf,-torque[10]= %lf,torque[9]= %lf, torque[8]= %lf,-torque[7]= %lf,-torque[6]= %lf",
@@ -9150,7 +9187,6 @@ void Walk::run() {
 						// printf("!!!!!!!!!!!!!!!!!dspFslipOFF!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
 					}
 
-					
 					pre_ycom_c = _ycom_c;
 					pre_xcom_c=_xcom_c;
 					pre_ycom_cv =_ycom_cv;
@@ -9196,7 +9232,6 @@ void Walk::run() {
 					inv_vel = productmatrix66_61(inv_jac_L, inv_th_L);
 					pre_inv_vel_1 = productmatrix66_61(inv_jac_L, inv_th_L);
 
-                   
 					pre_inv_vel[0]=pre_inv_vel_1.x[0][0];
 					pre_inv_vel[1]=pre_inv_vel_1.x[1][0];
 
@@ -10962,7 +10997,7 @@ void Walk::run() {
 	#endif            
 		
 #elif (torqueModeOn==0)
-// mMotors[16]->setPosition(-_th[0]);
+			// mMotors[16]->setPosition(-_th[0]);
 			// mMotors[14]->setPosition(_th[1]);
 			// mMotors[12]->setPosition(-_th[2]);
 			// mMotors[10]->setPosition(-_th[3]);

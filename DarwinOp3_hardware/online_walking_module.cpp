@@ -53,12 +53,13 @@ int tq_stand = 10000;//0;//3000;//4000/samplingTime;
 //////////////////////////////////////control pannel torque
 //////////////////////////////////////////////////////////
 #define torqueModeOn 1
-#define GravityCompensationRNE 1
+#define GravityCompensationRNE 0
 #define initPoseCheck 0
 #define jointCtrlOn 0
 #define iCtrlOn 0
+#define CTMOn 1
 int present_control_mode=0;//1=torquemode 0=positionmode
-double Tr=0.02;//0;//0.02;//
+double Tr=0.2;//0;//0.02;//
 double Tr_walk_ssp=0.015;
 double Tr_walk_dsp=0.015;
 double _kv=2*(1.8/Tr);//0;//2*(1.8/Tr);//180;//2*(1.8/Tr);
@@ -6439,22 +6440,40 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 
 		if(torqueStandingCount<tq_standing)
 		{
+			_th_encoder[0] = -curr_joint_pos_[joint_name_to_id_["r_ank_roll"] - 1];
+			_th_encoder[1] = -curr_joint_pos_[joint_name_to_id_["r_ank_pitch"] - 1];
+			_th_encoder[2] = curr_joint_pos_[joint_name_to_id_["r_knee"] - 1];
+			_th_encoder[3] = curr_joint_pos_[joint_name_to_id_["r_hip_pitch"] - 1];
+			_th_encoder[4] = curr_joint_pos_[joint_name_to_id_["r_hip_roll"] - 1];
+			_th_encoder[5] = curr_joint_pos_[joint_name_to_id_["r_hip_yaw"] - 1];
+			_th_encoder[6] = -curr_joint_pos_[joint_name_to_id_["l_hip_yaw"] - 1];
+			_th_encoder[7] = -curr_joint_pos_[joint_name_to_id_["l_hip_roll"] - 1];
+			_th_encoder[8] = curr_joint_pos_[joint_name_to_id_["l_hip_pitch"] - 1];
+			_th_encoder[9] = curr_joint_pos_[joint_name_to_id_["l_knee"] - 1];
+			_th_encoder[10] = -curr_joint_pos_[joint_name_to_id_["l_ank_pitch"] - 1];
+			_th_encoder[11] = curr_joint_pos_[joint_name_to_id_["l_ank_roll"] - 1];
+
 			if(_sn==0)
 			{
-				result_th[0] = -curr_joint_pos_[0];
-				result_th[1] = -curr_joint_pos_[1];
-				result_th[2] = curr_joint_pos_[2];
-				result_th[3] = curr_joint_pos_[3];
-				result_th[4] = curr_joint_pos_[4];
-				result_th[5] = curr_joint_pos_[5];
-				result_th[6] = -curr_joint_pos_[6];
-				result_th[7] = -curr_joint_pos_[7];
-				result_th[8] = curr_joint_pos_[8];
-				result_th[9] = curr_joint_pos_[9];
-				result_th[10] = -curr_joint_pos_[10];
-				result_th[11] = curr_joint_pos_[11];
+				result_th[0] = -curr_joint_pos_[joint_name_to_id_["r_ank_roll"] - 1];
+				result_th[1] = -curr_joint_pos_[joint_name_to_id_["r_ank_pitch"] - 1];
+				result_th[2] = curr_joint_pos_[joint_name_to_id_["r_knee"] - 1];
+				result_th[3] = curr_joint_pos_[joint_name_to_id_["r_hip_pitch"] - 1];
+				result_th[4] = curr_joint_pos_[joint_name_to_id_["r_hip_roll"] - 1];
+				result_th[5] = curr_joint_pos_[joint_name_to_id_["r_hip_yaw"] - 1];
+				result_th[6] = -curr_joint_pos_[joint_name_to_id_["l_hip_yaw"] - 1];
+				result_th[7] = -curr_joint_pos_[joint_name_to_id_["l_hip_roll"] - 1];
+				result_th[8] = curr_joint_pos_[joint_name_to_id_["l_hip_pitch"] - 1];
+				result_th[9] = curr_joint_pos_[joint_name_to_id_["l_knee"] - 1];
+				result_th[10] = -curr_joint_pos_[joint_name_to_id_["l_ank_pitch"] - 1];
+				result_th[11] = curr_joint_pos_[joint_name_to_id_["l_ank_roll"] - 1];
 				forwardkinematics(result_th);
 			}
+			else
+			{
+				forwardkinematics(_th_encoder);
+			}
+			
 			_theta_p.x[0][0] = result_th[0];
 			_theta_p.x[1][0] = result_th[1];
 			_theta_p.x[2][0] = result_th[2];
@@ -6891,18 +6910,6 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 			Mdth_d.x[11][0]=0.0;
 
 				
-			_th_encoder[0] = -curr_joint_pos_[0];
-			_th_encoder[1] = -curr_joint_pos_[1];
-			_th_encoder[2] = curr_joint_pos_[2];
-			_th_encoder[3] = curr_joint_pos_[3];
-			_th_encoder[4] = curr_joint_pos_[4];
-			_th_encoder[5] = curr_joint_pos_[5];
-			_th_encoder[6] = -curr_joint_pos_[6];
-			_th_encoder[7] = -curr_joint_pos_[7];
-			_th_encoder[8] = curr_joint_pos_[8];
-			_th_encoder[9] = curr_joint_pos_[9];
-			_th_encoder[10] = -curr_joint_pos_[10];
-			_th_encoder[11] = curr_joint_pos_[11];
 
 			// if (_sn==0)
 			// {
@@ -6913,6 +6920,7 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 			// 	_th_current_p =_th_current_n;
 			// }
 			_th_current_p =_th_current_n;
+
 			_th_current_n.x[0][0]=_th_encoder[0];
 			_th_current_n.x[1][0]=_th_encoder[1];
 			_th_current_n.x[2][0]=_th_encoder[2];
@@ -7247,19 +7255,19 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 // #endif
 
 #if torqueModeOn
-			des_joint_torque_[joint_name_to_id_["r_hip_yaw"]-1]      = torque[5]*10;
-			des_joint_torque_[joint_name_to_id_["r_hip_roll"]-1]     = torque[4]*10;
-			des_joint_torque_[joint_name_to_id_["r_hip_pitch"]-1]    = torque[3]*10;
-			des_joint_torque_[joint_name_to_id_["r_knee"]-1]         = torque[2]*10;
-			des_joint_torque_[joint_name_to_id_["r_ank_pitch"]-1]    = -torque[1]*10;
-			des_joint_torque_[joint_name_to_id_["r_ank_roll"]-1]     = -torque[0]*10;
+			des_joint_torque_[joint_name_to_id_["r_hip_yaw"]-1]      = torque[5]/149.795*227.509;//_th[5]//encoder[0]
+			des_joint_torque_[joint_name_to_id_["r_hip_roll"]-1]     = torque[4]/149.795*227.509;//_th[4]//encoder[2]
+			des_joint_torque_[joint_name_to_id_["r_hip_pitch"]-1]    = torque[3]/149.795*227.509;//_th[3]//encoder[4]
+			des_joint_torque_[joint_name_to_id_["r_knee"]-1]         = torque[2]/149.795*227.509;//_th[2]//encoder[6]
+			des_joint_torque_[joint_name_to_id_["r_ank_pitch"]-1]    = -torque[1]/149.795*227.509;//_th[1]//encoder[8]
+			des_joint_torque_[joint_name_to_id_["r_ank_roll"]-1]   	 = -torque[0]/149.795*227.509;//_th[0]///encoder[10]
 			
-			des_joint_torque_[joint_name_to_id_["l_hip_yaw"]-1]      = -torque[6]*10;
-			des_joint_torque_[joint_name_to_id_["l_hip_roll"]-1]     = -torque[7]*10;
-			des_joint_torque_[joint_name_to_id_["l_hip_pitch"]-1]    = torque[8]*10;
-			des_joint_torque_[joint_name_to_id_["l_knee"]-1]         = torque[9]*10;
-			des_joint_torque_[joint_name_to_id_["l_ank_pitch"]-1]  	 = -torque[10]*10;
-			des_joint_torque_[joint_name_to_id_["l_ank_roll"]-1]     = torque[12]*10;
+			des_joint_torque_[joint_name_to_id_["l_hip_yaw"]-1]      = -torque[6]/149.795*227.509;
+			des_joint_torque_[joint_name_to_id_["l_hip_roll"]-1]     = -torque[7]/149.795*227.509;
+			des_joint_torque_[joint_name_to_id_["l_hip_pitch"]-1]    = torque[8]/149.795*227.509;//-0.4;//
+			des_joint_torque_[joint_name_to_id_["l_knee"]-1]         = torque[9]/149.795*227.509;//0;//
+			des_joint_torque_[joint_name_to_id_["l_ank_pitch"]-1]    = -torque[10]/149.795*227.509;
+			des_joint_torque_[joint_name_to_id_["l_ank_roll"]-1]     = torque[11]/149.795*227.509;
 			
 			// des_joint_torque_[joint_name_to_id_["r_hip_yaw"]-1]      = 0;//_th[5]//encoder[0]
 			// des_joint_torque_[joint_name_to_id_["r_hip_roll"]-1]     = 0;//_th[4]//encoder[2]
@@ -7374,18 +7382,6 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 			// ps_LtorqueX_last=torquexl;
 			// ps_LtorqueY_last=torqueyl;
 
-			_th_encoder[0] = -curr_joint_pos_[0];
-			_th_encoder[1] = -curr_joint_pos_[1];
-			_th_encoder[2] = curr_joint_pos_[2];
-			_th_encoder[3] = curr_joint_pos_[3];
-			_th_encoder[4] = curr_joint_pos_[4];
-			_th_encoder[5] = curr_joint_pos_[5];
-			_th_encoder[6] = -curr_joint_pos_[6];
-			_th_encoder[7] = -curr_joint_pos_[7];
-			_th_encoder[8] = curr_joint_pos_[8];
-			_th_encoder[9] = curr_joint_pos_[9];
-			_th_encoder[10] = -curr_joint_pos_[10];
-			_th_encoder[11] = curr_joint_pos_[11];
 			torqueStandingCount++;
 			loopcount++;
 			ROS_INFO("torque standing loopcount = %d",loopcount);
@@ -7398,21 +7394,18 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 		
 		else if(torqueStandCount<tq_stand)//torque mode standing
 		{
-
-			
-
-			_th_encoder[0] = -curr_joint_pos_[0];
-			_th_encoder[1] = -curr_joint_pos_[1];
-			_th_encoder[2] = curr_joint_pos_[2];
-			_th_encoder[3] = curr_joint_pos_[3];
-			_th_encoder[4] = curr_joint_pos_[4];
-			_th_encoder[5] = curr_joint_pos_[5];
-			_th_encoder[6] = -curr_joint_pos_[6];
-			_th_encoder[7] = -curr_joint_pos_[7];
-			_th_encoder[8] = curr_joint_pos_[8];
-			_th_encoder[9] = curr_joint_pos_[9];
-			_th_encoder[10] = -curr_joint_pos_[10];
-			_th_encoder[11] = curr_joint_pos_[11];
+			_th_encoder[0] = -curr_joint_pos_[joint_name_to_id_["r_ank_roll"] - 1];
+			_th_encoder[1] = -curr_joint_pos_[joint_name_to_id_["r_ank_pitch"] - 1];
+			_th_encoder[2] = curr_joint_pos_[joint_name_to_id_["r_knee"] - 1];
+			_th_encoder[3] = curr_joint_pos_[joint_name_to_id_["r_hip_pitch"] - 1];
+			_th_encoder[4] = curr_joint_pos_[joint_name_to_id_["r_hip_roll"] - 1];
+			_th_encoder[5] = curr_joint_pos_[joint_name_to_id_["r_hip_yaw"] - 1];
+			_th_encoder[6] = -curr_joint_pos_[joint_name_to_id_["l_hip_yaw"] - 1];
+			_th_encoder[7] = -curr_joint_pos_[joint_name_to_id_["l_hip_roll"] - 1];
+			_th_encoder[8] = curr_joint_pos_[joint_name_to_id_["l_hip_pitch"] - 1];
+			_th_encoder[9] = curr_joint_pos_[joint_name_to_id_["l_knee"] - 1];
+			_th_encoder[10] = -curr_joint_pos_[joint_name_to_id_["l_ank_pitch"] - 1];
+			_th_encoder[11] = curr_joint_pos_[joint_name_to_id_["l_ank_roll"] - 1];
 
 #if initPoseCheck
 			if(_sn==0)
@@ -7459,6 +7452,19 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 #endif			
 
 #if GravityCompensationRNE	
+			// _th_encoder[0] =0;
+			// _th_encoder[1] = 0;
+			// _th_encoder[2] =0;
+			// _th_encoder[3] = 0;
+			// _th_encoder[4] = 0;
+			// _th_encoder[5] = 0;
+			// _th_encoder[6] = 0;
+			// _th_encoder[7] = 0;
+			// _th_encoder[8] = 0;
+			// _th_encoder[9] = 1.57;
+			// _th_encoder[10] = 0;
+			// _th_encoder[11] = 0;
+
 			// _th_encoder[0] = -curr_joint_pos_[0];
 			// _th_encoder[1] = -curr_joint_pos_[1];
 			// _th_encoder[2] = curr_joint_pos_[2];
@@ -7471,6 +7477,23 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 			// _th_encoder[9] = curr_joint_pos_[9];
 			// _th_encoder[10] = -curr_joint_pos_[10];
 			// _th_encoder[11] = curr_joint_pos_[11];
+
+			printf("curr_joint_pos_[%d]=%lf\n",joint_name_to_id_["l_knee"]-1,curr_joint_pos_[joint_name_to_id_["l_knee"]-1]);
+
+			// _th_encoder[0] =0;
+			// _th_encoder[1] = 0;
+			// _th_encoder[2] =0;
+			// _th_encoder[3] = 0;
+			// _th_encoder[4] = 0;
+			// _th_encoder[5] = 0;
+			// _th_encoder[6] = 0;
+			// _th_encoder[7] = 0;
+			// _th_encoder[8] = 0;
+			// _th_encoder[9] = curr_joint_pos_[9];
+			// _th_encoder[10] = 0;
+			// _th_encoder[11] = 0;
+
+
 
 			forwardkinematics(_th_encoder);
 
@@ -7562,7 +7585,6 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 			RR56.x[2][1] = TR56[2][1];
 			RR56.x[2][2] = TR56[2][2];
 
-
 			RR67.x[0][0] = TR6E[0][0];
 			RR67.x[0][1] = TR6E[0][1];
 			RR67.x[0][2] = TR6E[0][2];
@@ -7574,7 +7596,6 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 			RR67.x[2][0] = TR6E[2][0];
 			RR67.x[2][1] = TR6E[2][1];
 			RR67.x[2][2] = TR6E[2][2];
-
 
 			RL01.x[0][0] = TLB1[0][0];
 			RL01.x[0][1] = TLB1[0][1];
@@ -7636,7 +7657,6 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 			RL45.x[2][1] = TL45[2][1];
 			RL45.x[2][2] = TL45[2][2];
 
-
 			RL56.x[0][0] = TL56[0][0];
 			RL56.x[0][1] = TL56[0][1];
 			RL56.x[0][2] = TL56[0][2];
@@ -7648,7 +7668,6 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 			RL56.x[2][0] = TL56[2][0];
 			RL56.x[2][1] = TL56[2][1];
 			RL56.x[2][2] = TL56[2][2];
-
 
 			RL67.x[0][0] = TL6E[0][0];
 			RL67.x[0][1] = TL6E[0][1];
@@ -7662,9 +7681,7 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 			RL67.x[2][1] = TL6E[2][1];
 			RL67.x[2][2] = TL6E[2][2];
 
-
 			//Matrix_M33X7 RR, RL;
-
 
 			RR.x[0][0] = RR01;
 			RR.x[1][0] = RR12;
@@ -7720,7 +7737,6 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 			invRL.x[5][0] = RL65;
 			invRL.x[6][0] = RL76;
 
-
 			PR01.x[0][0] = TRB1[0][3];
 			PR01.x[1][0] = TRB1[1][3];
 			PR01.x[2][0] = TRB1[2][3];
@@ -7749,7 +7765,6 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 			PR67.x[1][0] = TR6E[1][3];
 			PR67.x[2][0] = TR6E[2][3];
 		
-
 			PL01.x[0][0] = TLB1[0][3];
 			PL01.x[1][0] = TLB1[1][3];
 			PL01.x[2][0] = TLB1[2][3];
@@ -7778,8 +7793,6 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 			PL67.x[1][0] = TL6E[1][3];
 			PL67.x[2][0] = TL6E[2][3];
 		
-
-
 			//Matrix_M31X7 PositionppR;
 
 			PositionppR.x[0][0] = PR01;
@@ -7800,14 +7813,12 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 			PositionppL.x[0][5] = PL56;
 			PositionppL.x[0][6] = PL67;
 
-
 			ddq_Jdot_R_p.x[0][0] = 0.0;
 			ddq_Jdot_R_p.x[1][0] = 0.0;
 			ddq_Jdot_R_p.x[2][0] = 0.0;
 			ddq_Jdot_R_p.x[3][0] = 0.0;
 			ddq_Jdot_R_p.x[4][0] = 0.0;
 			ddq_Jdot_R_p.x[5][0] = 0.0;
-	
 	
 			ddq_Jdot_R_p.x[0][1] = 0.0;
 			ddq_Jdot_R_p.x[1][1] = 0.0;
@@ -7816,14 +7827,12 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 			ddq_Jdot_R_p.x[4][1] = 0.0;
 			ddq_Jdot_R_p.x[5][1] = 0.0;
 
-
 			ddq_Jdot_R_p.x[0][2] = 0.0;
 			ddq_Jdot_R_p.x[1][2] = 0.0;
 			ddq_Jdot_R_p.x[2][2] = 0.0;
 			ddq_Jdot_R_p.x[3][2] = 0.0;
 			ddq_Jdot_R_p.x[4][2] = 0.0;
 			ddq_Jdot_R_p.x[5][2] = 0.0;
-
 
 			ddq_Jdot_R_p.x[0][3] = 0.0;
 			ddq_Jdot_R_p.x[1][3] = 0.0;
@@ -7832,14 +7841,12 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 			ddq_Jdot_R_p.x[4][3] = 0.0;
 			ddq_Jdot_R_p.x[5][3] = 0.0;
 
-	
 			ddq_Jdot_R_p.x[0][4] = 0.0;
 			ddq_Jdot_R_p.x[1][4] = 0.0;
 			ddq_Jdot_R_p.x[2][4] = 0.0;
 			ddq_Jdot_R_p.x[3][4] = 0.0;
 			ddq_Jdot_R_p.x[4][4] = 0.0;
 			ddq_Jdot_R_p.x[5][4] = 0.0;
-
 
 			ddq_Jdot_R_p.x[0][5] = 0.0;
 			ddq_Jdot_R_p.x[1][5] = 0.0;
@@ -7922,6 +7929,10 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 				Mdth = s_vectorminus121_121(_th_current_n, _th_current_p);
 			}
 
+#if (CTMOn==0)		
+			_kv=0;
+			_kp=0;
+#endif
 			// // double Tr_anklePitch=0.015;//0;//0.02;//
 			// // double _kv_anklePitch=2*(1.8/Tr_anklePitch);//0;//2*(1.8/Tr);//180;//2*(1.8/Tr);
 			// // double _kp_anklePitch=(1.8/Tr_anklePitch)*(1.8/Tr_anklePitch);//0;//(1.8/Tr)*(1.8/Tr);//8100;//(1.8/Tr)*(1.8/Tr);
@@ -7982,9 +7993,8 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 
 			nr77.x[0][0] =  0;//0.142319;//-ps_RtorqueX_last;//-torque_F_R[0];//-ps_RtorqueX_last;//-torquexr;//-torque_F_R[0];//0;//
 			nr77.x[1][0] =  0;//0.053947;//-ps_RtorqueY_last;//-torque_F_R[1];//-ps_RtorqueY_last;//-torqueyr;//-torque_F_R[1];//0;//
-			nr77.x[2][0] =0;
+			nr77.x[2][0] =	0;
 			// printf("\nR : fz=%lf tx=%lf ty=%lf",ps_RforceZ_last,ps_RtorqueX_last,ps_RtorqueY_last);
-
 
 			//RNE
 			//outward iteration
@@ -7999,7 +8009,6 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 
 			RNEfr.x[0][6] = fr77;
 			RNEnr.x[0][6] = nr77;
-
 
 			for (k = 0; k < 6; k++) { ///outward iteration
 
@@ -8030,7 +8039,6 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 					dwr_m2_1=0;
 #endif					
 					dwr_m2 = productmatrix11_31(dwr_m2_1, ta_zr);//3x1
-
 					RNEdwr.x[0][k + 1] = vectorplus31_31_31(productdwr1, cproductdwr1, dwr_m2);//3x1
 
 					vpr1 = crossproductmatrix31_31(domegar, PositionppR.x[0][k]);//3x1
@@ -8061,10 +8069,7 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 					RNENr_3 = crossproductmatrix31_31(RNEwr.x[0][k + 1], RNENr_2);//3x1
 
 					RNENr.x[0][k + 1] = vectorplus31_31(RNENr_1, RNENr_3);//3x1
-
-
 				}
-
 
 				for (k = 6; k > 0; k = k - 1) {  ///inward iteration
 
@@ -8078,16 +8083,13 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 
 					RNEnr.x[0][k - 1] = vectorplus31_31_31_31(RNENr.x[0][k], RNEnr_1, RNEnr_2, RNEnr_3);//3x1
 
-
 					helpFinaltorquer = RNEnr.x[0][k - 1];//3x1
 					helpFinaltorquer_1= transposeMatrix_31(helpFinaltorquer);//1x3
 					ta_zr_1 = ta.x[0][6-k];//3x1
 					Finaltorque.x[6-k][0] = productmatrix13_31(helpFinaltorquer_1,ta_zr_1);//double
 				}
 
-
-
-			//RNE AEÂ¡Â¾a AÂ¢ÃÂ¡ÃC 
+			//RNE EE init
 			wl00.x[0][0] = 0;
 			wl00.x[1][0] = 0;
 			wl00.x[2][0] = 0;
@@ -8104,12 +8106,7 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 			dvcl00.x[1][0] = 0;
 			dvcl00.x[2][0] = 0;
 
-
-
 			//Matrix_3X1 Fl00, Nl00, fl77, nl77;
-
-
-
 
 			Fl00.x[0][0] = 0;
 			Fl00.x[1][0] = 0;
@@ -8120,7 +8117,6 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 			Nl00.x[2][0] = 0;
 
 			//f,n
-
 
 			fl77.x[0][0] = 0;
 			fl77.x[1][0] = 0;
@@ -8140,7 +8136,6 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 
 			RNEfl.x[0][6] = fl77;
 			RNEnl.x[0][6] = nl77;
-
 
 			// B->R
 				for (k = 0; k < 6; k++) { ///outward iteration
@@ -8162,7 +8157,6 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 					productdwl1 = productmatrix33_31(rotationl, domegal);//3x1
 
 					cproductdwl1 = crossproductmatrix31_31(productwl, wl_m2);//3x1
-
 
 					ta_zl=ta.x[0][k+6];//3x1
 					dwl_m2_1=Mddth.x[k+6][0];//double
@@ -8227,7 +8221,6 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 					// printf("Finaltorque.x[%d][0]=%lf",k+5,Finaltorque.x[k+5][0]);
 				}
 
-
 			torque1 = Finaltorque.x[0][0];
 			torque2 = Finaltorque.x[1][0];
 			torque3 = Finaltorque.x[2][0];
@@ -8252,36 +8245,51 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 			
 			if(loopcount%10==0)
 			{
-				// printf("torque[8]Lhip pitch=%lf\n",torque[8]);
-			// printf("torque[9]L Knee pitch=%lf\n",torque[9]);
-			// printf("th_d[0]=%lf, th_d[1]=%lf,th_d[2]=%lf,th_d[3]=%lf,th_d[4]=%lf,th_d[5]=%lf,th_d[6]=%lf,th_d[7]=%lf,th_d[8]=%lf,th_d[9]=%lf,th_d[10]=%lf,th_d[11]=%lf",
-			// _th_torque[0],_th_torque[1],_th_torque[2],_th_torque[3],_th_torque[4],_th_torque[5],
-			// _th_torque[6],_th_torque[7],_th_torque[8],_th_torque[9],_th_torque[10],_th_torque[11]);
-			// printf("curr_joint_pos_[9]=%lf",curr_joint_pos_[9]);
-			// printf("torque stand loopcount = %d",loopcount);
+				printf("th_d[0]=%lf, th_d[1]=%lf,th_d[2]=%lf,th_d[3]=%lf,th_d[4]=%lf,th_d[5]=%lf,th_d[6]=%lf,th_d[7]=%lf,th_d[8]=%lf,th_d[9]=%lf,th_d[10]=%lf,th_d[11]=%lf",
+				_th_torque[0],_th_torque[1],_th_torque[2],_th_torque[3],_th_torque[4],_th_torque[5],
+				_th_torque[6],_th_torque[7],_th_torque[8],_th_torque[9],_th_torque[10],_th_torque[11]);
+				printf("\n-torque[0]= %lf,-torque[1]= %lf,torque[2]= %lf,torque[3]= %lf, torque[4]= %lf,torque[5]= %lf",
+				-torque[0],-torque[1],torque[2],torque[3],torque[4],torque[5]);
+				printf("\ntorque[11]= %lf,-torque[10]= %lf,torque[9]= %lf, torque[8]= %lf,-torque[7]= %lf,-torque[6]= %lf",
+				torque[11],-torque[10],torque[9],torque[8],-torque[7],-torque[6]);
+				printf("torque stand loopcount = %d",loopcount);
 			}
-			printf("torque[9]L Knee pitch=%lf\n",torque[9]);
+			// printf("torque[9]L Knee pitch=%lf\n",torque[9]);
 			// printf("curr_joint_pos_[l_knee]=%lf",curr_joint_pos_[joint_name_to_id_["l_knee"]-1]);
-			printf("\n");
+			// printf("\n");
 			
 			// printf("\n-torque[0]= %lf,-torque[1]= %lf,torque[2]= %lf,torque[3]= %lf, torque[4]= %lf,torque[5]= %lf",
 			// -torque[0],-torque[1],torque[2],torque[3],torque[4],torque[5]);
 			// printf("\ntorque[11]= %lf,-torque[10]= %lf,torque[9]= %lf, torque[8]= %lf,-torque[7]= %lf,-torque[6]= %lf",
 			// torque[11],-torque[10],torque[9],torque[8],-torque[7],-torque[6]);
 
-			des_joint_torque_[joint_name_to_id_["r_hip_yaw"]-1]      = 0;//torque[5];//_th[5]//encoder[0]
-			des_joint_torque_[joint_name_to_id_["r_hip_roll"]-1]     = 0;//torque[4];//_th[4]//encoder[2]
-			des_joint_torque_[joint_name_to_id_["r_hip_pitch"]-1]    = 0;//torque[3];//_th[3]//encoder[4]
-			des_joint_torque_[joint_name_to_id_["r_knee"]-1]         = 0;//torque[2];//_th[2]//encoder[6]
-			des_joint_torque_[joint_name_to_id_["r_ank_pitch"]-1]    = 0;//-torque[1];//_th[1]//encoder[8]
-			des_joint_torque_[joint_name_to_id_["r_ank_roll"]-1]   	 = 0;//-torque[0];//_th[0]///encoder[10]
+			// des_joint_torque_[joint_name_to_id_["r_hip_yaw"]-1]      = 0;//torque[5];//_th[5]//encoder[0]
+			// des_joint_torque_[joint_name_to_id_["r_hip_roll"]-1]     = 0;//torque[4];//_th[4]//encoder[2]
+			// des_joint_torque_[joint_name_to_id_["r_hip_pitch"]-1]    = 0;//torque[3];//_th[3]//encoder[4]
+			// des_joint_torque_[joint_name_to_id_["r_knee"]-1]         = 0;//torque[2];//_th[2]//encoder[6]
+			// des_joint_torque_[joint_name_to_id_["r_ank_pitch"]-1]    = 0;//-torque[1];//_th[1]//encoder[8]
+			// des_joint_torque_[joint_name_to_id_["r_ank_roll"]-1]   	 = 0;//-torque[0];//_th[0]///encoder[10]
 			
-			des_joint_torque_[joint_name_to_id_["l_hip_yaw"]-1]      = 0;//-torque[6];
-			des_joint_torque_[joint_name_to_id_["l_hip_roll"]-1]     = 0;//-torque[7];
-			des_joint_torque_[joint_name_to_id_["l_hip_pitch"]-1]    = 0;//torque[8]/149.795*227.509;//-0.4;//
+			// des_joint_torque_[joint_name_to_id_["l_hip_yaw"]-1]      = 0;//-torque[6];
+			// des_joint_torque_[joint_name_to_id_["l_hip_roll"]-1]     = 0;//-torque[7];
+			// des_joint_torque_[joint_name_to_id_["l_hip_pitch"]-1]    = 0;//torque[8]/149.795*227.509;//-0.4;//
+			// des_joint_torque_[joint_name_to_id_["l_knee"]-1]         = torque[9]/149.795*227.509;//0;//
+			// des_joint_torque_[joint_name_to_id_["l_ank_pitch"]-1]    = 0;//-torque[10];
+			// des_joint_torque_[joint_name_to_id_["l_ank_roll"]-1]     = 0;//torque[11];
+
+			des_joint_torque_[joint_name_to_id_["r_hip_yaw"]-1]      = torque[5]/149.795*227.509;//_th[5]//encoder[0]
+			des_joint_torque_[joint_name_to_id_["r_hip_roll"]-1]     = torque[4]/149.795*227.509;//_th[4]//encoder[2]
+			des_joint_torque_[joint_name_to_id_["r_hip_pitch"]-1]    = torque[3]/149.795*227.509;//_th[3]//encoder[4]
+			des_joint_torque_[joint_name_to_id_["r_knee"]-1]         = torque[2]/149.795*227.509;//_th[2]//encoder[6]
+			des_joint_torque_[joint_name_to_id_["r_ank_pitch"]-1]    = -torque[1]/149.795*227.509;//_th[1]//encoder[8]
+			des_joint_torque_[joint_name_to_id_["r_ank_roll"]-1]   	 = -torque[0]/149.795*227.509;//_th[0]///encoder[10]
+			
+			des_joint_torque_[joint_name_to_id_["l_hip_yaw"]-1]      = -torque[6]/149.795*227.509;
+			des_joint_torque_[joint_name_to_id_["l_hip_roll"]-1]     = -torque[7]/149.795*227.509;
+			des_joint_torque_[joint_name_to_id_["l_hip_pitch"]-1]    = torque[8]/149.795*227.509;//-0.4;//
 			des_joint_torque_[joint_name_to_id_["l_knee"]-1]         = torque[9]/149.795*227.509;//0;//
-			des_joint_torque_[joint_name_to_id_["l_ank_pitch"]-1]    = 0;//-torque[10];
-			des_joint_torque_[joint_name_to_id_["l_ank_roll"]-1]     = 0;//torque[11];
+			des_joint_torque_[joint_name_to_id_["l_ank_pitch"]-1]    = -torque[10]/149.795*227.509;
+			des_joint_torque_[joint_name_to_id_["l_ank_roll"]-1]     = torque[11]/149.795*227.509;
 
 #if torqueModeOn
 			jointTorqueLimitCheck(0.5);
@@ -8304,7 +8312,7 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 				torqueStandCount++;
 			}
 		}
-		else //(loopcount >= tq_stand)&& (loopcount>=tq_standing)
+		else //(loopcount >= tq_stand)&& (loopcount>=tq_standing) WPG
 		{
 			double _dds= 0.1257;
 			//while (1) {
@@ -9894,10 +9902,8 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 			nl77.x[2][0] = -tq_Zl;
 		// printf("\n phase=%d\n",phase);
 
-
 			///RNE
 			//outward iteration
-
 
 			RNEwl.x[0][0] = wl00;
 			RNEdwl.x[0][0] = dwl00;
