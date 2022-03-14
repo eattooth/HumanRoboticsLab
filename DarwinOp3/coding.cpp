@@ -75,24 +75,24 @@ static const char *ftmotorNames[FTMOTORS] = {
 #define ankleRollL  11
 //////////////////////////////////////control pannel
 ////////////////////////////////////////////////////
-#define debugPrintOn 0
+#define debugPrintOn 1
 #define debugFprintOn 0
 int samplingTime = 1; // integer sampling time
 double samplingtime = 0.001;//0.008;
 int samplingPeriod = samplingTime;
 int inverse_type = 1; // 0 : direct inverse from C , 1 : inverse solved from Matlab
 int control_on = 0; // 1 : ZMP control , 0 : nominal value
-int ps_stand = 250;//a250;//400/samplingTime;
-int tq_stand = 10000;//0;//3000;//4000/samplingTime;
+int ps_stand = 50;//a250;//400/samplingTime;
+int tq_stand = 250;//0;//3000;//4000/samplingTime;
 //////////////////////////////////////control pannel torque
 //////////////////////////////////////////////////////////
 #define torqueModeOn 1
 #define torqueModeStand 0
-#define GravityCompensation 1
+#define GravityCompensation 0
 #define jointCtrlOn 0
 #define iCtrlOn 0
-#define onlyOneMotorTorque 1
-double Tr=0.015;//0;//0;//0.02;//
+#define onlyOneMotorTorque 0
+double Tr=0.04;//0;//0;//0.02;//
 double Tr_walk_ssp=0.015;
 double Tr_walk_dsp=0.015;
 double _kv=2*(1.8/Tr);//0;//2*(1.8/Tr);//180;//2*(1.8/Tr);
@@ -102,8 +102,8 @@ double _kp=(1.8/Tr)*(1.8/Tr);//0;//(1.8/Tr)*(1.8/Tr);//8100;//(1.8/Tr)*(1.8/Tr);
 // double _m = 1.34928+1.0502;
 double _m = 1.34928+1.18888;
 // double _m = 1.34928+0.23061*2+0.14807+1.18888;
-int sensorOn=7;
-//(=0 fz: constant)(=1 fz: constant tx,ty: measured)//(=2 fz tx ty sensorLPF live)(=3 all sensorLPF live)//(=4 fz: measured)(5=fz: measured(LPF))//(=6 fz: constant tx,ty: measured(LPF))//(=7 fz tx ty : constant)
+int sensorOn=0;
+//(=0 skywalk) (fz: constant)(=1 fz: constant tx,ty: measured)//(=2 fz tx ty sensorLPF live)(=3 all sensorLPF live)//(=4 fz: measured)(5=fz: measured(LPF))//(=6 fz: constant tx,ty: measured(LPF))//(=7 fz tx ty : constant)
 double jointDamperGain=0.0;
 double iCtrlGain=0;
 double jointCtrlGain=0.4;
@@ -3989,10 +3989,10 @@ void Walk::run() {
 	double _th_i[12] = {-0.006594, 0.909073, -1.619199, 0.710126, 0.006594, 0.000000, -0.000000, -0.006594, -0.710126, 1.619199, -0.909073, 0.006594};
 	double _th_interpolation[12] = {-0.006594, 0.909073, -1.619199, 0.710126, 0.006594, 0.000000, -0.000000, -0.006594, -0.710126, 1.619199, -0.909073, 0.006594};
 	double _th_position[12] = {-0.006594, 0.909073, -1.619199, 0.710126, 0.006594, 0.000000, -0.000000, -0.006594, -0.710126, 1.619199, -0.909073, 0.006594};
-	// double _th_torque[12] = {-0.006594, 0.909073, -1.619199, 0.710126, 0.006594, 0.000000, -0.000000, -0.006594, -0.710126, 1.619199, -0.909073, 0.006594};
+	double _th_torque[12] = {-0.006594, 0.909073, -1.619199, 0.710126, 0.006594, 0.000000, -0.000000, -0.006594, -0.710126, 1.619199, -0.909073, 0.006594};
 	double _th_printf[12]={0,};
 
-	double _th_torque[12] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.000000, -0.000000, -0.0, -0.0, -1.57, -0.0, 0.0};
+	// double _th_torque[12] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.000000, -0.000000, -0.0, -0.0, -1.57, -0.0, 0.0};
 	
 	// for (int i = 0; i<100; i++)
 	// {
@@ -7048,6 +7048,54 @@ void Walk::run() {
 		PositionppL.x[0][5] = PL56;
 		PositionppL.x[0][6] = PL67;
 
+
+		ddq_Jdot_L_p.x[0][0] = 0.0;
+		ddq_Jdot_L_p.x[1][0] = 0.0;
+		ddq_Jdot_L_p.x[2][0] = 0.0;
+		ddq_Jdot_L_p.x[3][0] = 0.0;
+		ddq_Jdot_L_p.x[4][0] = 0.0;
+		ddq_Jdot_L_p.x[5][0] = 0.0;
+
+
+		ddq_Jdot_L_p.x[0][1] = 0.0;
+		ddq_Jdot_L_p.x[1][1] = 0.0;
+		ddq_Jdot_L_p.x[2][1] = 0.0;
+		ddq_Jdot_L_p.x[3][1] = 0.0;
+		ddq_Jdot_L_p.x[4][1] = 0.0;
+		ddq_Jdot_L_p.x[5][1] = 0.0;
+
+
+		ddq_Jdot_L_p.x[0][2] = 0.0;
+		ddq_Jdot_L_p.x[1][2] = 0.0;
+		ddq_Jdot_L_p.x[2][2] = 0.0;
+		ddq_Jdot_L_p.x[3][2] = 0.0;
+		ddq_Jdot_L_p.x[4][2] = 0.0;
+		ddq_Jdot_L_p.x[5][2] = 0.0;
+
+
+		ddq_Jdot_L_p.x[0][3] = 0.0;
+		ddq_Jdot_L_p.x[1][3] = 0.0;
+		ddq_Jdot_L_p.x[2][3] = 0.0;
+		ddq_Jdot_L_p.x[3][3] = 0.0;
+		ddq_Jdot_L_p.x[4][3] = 0.0;
+		ddq_Jdot_L_p.x[5][3] = 0.0;
+
+
+		ddq_Jdot_L_p.x[0][4] = 0.0;
+		ddq_Jdot_L_p.x[1][4] = 0.0;
+		ddq_Jdot_L_p.x[2][4] = 0.0;
+		ddq_Jdot_L_p.x[3][4] = 0.0;
+		ddq_Jdot_L_p.x[4][4] = 0.0;
+		ddq_Jdot_L_p.x[5][4] = 0.0;
+
+
+		ddq_Jdot_L_p.x[0][5] = 0.0;
+		ddq_Jdot_L_p.x[1][5] = 0.0;
+		ddq_Jdot_L_p.x[2][5] = 0.0;
+		ddq_Jdot_L_p.x[3][5] = 0.0;
+		ddq_Jdot_L_p.x[4][5] = 0.0;
+		ddq_Jdot_L_p.x[5][5] = 0.0;
+
 		ddq_Jdot_R_p.x[0][0] = 0.0;
 		ddq_Jdot_R_p.x[1][0] = 0.0;
 		ddq_Jdot_R_p.x[2][0] = 0.0;
@@ -9926,10 +9974,7 @@ void Walk::run() {
 		_theta_n.x[10][0] = _th[10];
 		_theta_n.x[11][0] = _th[11];
 
-		
 		if (_sn==0){
-
-
 			_dth_p.x[0][0]=0;
 			_dth_p.x[1][0]=0;
 			_dth_p.x[2][0]=0;
@@ -10354,22 +10399,23 @@ void Walk::run() {
 				tq_Zr = 0.0;
 				tq_Xr = 0.0;
 				tq_Yr = 0.0;
-				if (phase == 1) // SSP_R 
-				{
-					f_Zr = d_Fz_SSP;
-				}
-				else if (phase == 0) // SSP_L 
-				{
-					f_Zr = 0.0;
-				}
-				else if (phase == 3) // DSP_R 
-				{
-					f_Zr = d_Fz_DSP;//ps_RforceZ_last;//
-				}
-				else if (phase == 2) // DSP_L
-				{
-					f_Zr = d_Fz_DSP;//ps_RforceZ_last;//
-				}
+				f_Zr = 0.0;
+				// if (phase == 1) // SSP_R 
+				// {
+				// 	f_Zr = d_Fz_SSP;
+				// }
+				// else if (phase == 0) // SSP_L 
+				// {
+				// 	f_Zr = 0.0;
+				// }
+				// else if (phase == 3) // DSP_R 
+				// {
+				// 	f_Zr = d_Fz_DSP;//ps_RforceZ_last;//
+				// }
+				// else if (phase == 2) // DSP_L
+				// {
+				// 	f_Zr = d_Fz_DSP;//ps_RforceZ_last;//
+				// }
 			}
 			else if(sensorOn==4){
 				f_Xr = 0.0;
@@ -10610,22 +10656,23 @@ void Walk::run() {
                 tq_Xl = 0.0;
                 tq_Yl = 0.0;
                 tq_Zl = 0.0;
-				if (phase == 1) // SSP_R 
-				{
-					f_Zl = 0.0;
-				}
-				else if (phase == 0) // SSP_L 
-				{
-					f_Zl = d_Fz_SSP;
-				}
-				else if (phase == 3) // DSP_R 
-				{
-					f_Zl =  d_Fz_DSP;//ps_LforceZ_last;//
-				}
-				else if (phase == 2) // DSP_L
-				{
-					f_Zl = d_Fz_DSP;//ps_LforceZ_last;//
-				}
+				f_Zl = 0.0;
+				// if (phase == 1) // SSP_R 
+				// {
+				// 	f_Zl = 0.0;
+				// }
+				// else if (phase == 0) // SSP_L 
+				// {
+				// 	f_Zl = d_Fz_SSP;
+				// }
+				// else if (phase == 3) // DSP_R 
+				// {
+				// 	f_Zl =  d_Fz_DSP;//ps_LforceZ_last;//
+				// }
+				// else if (phase == 2) // DSP_L
+				// {
+				// 	f_Zl = d_Fz_DSP;//ps_LforceZ_last;//
+				// }
 			}
 			else if(sensorOn==4){
 				f_Xl = 0.0;

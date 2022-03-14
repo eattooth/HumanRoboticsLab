@@ -152,6 +152,8 @@ private:
   void sensoryFeedback(const double &rlGyroErr, const double &fbGyroErr, double *balance_angle);
   void jointLimitCheck();
   void jointTorqueLimitCheck(double limit);
+  void jointTorqueDegreeLimitCheck(int loopcount);
+  void EEconstDefine(int phase);
   void calcRobotPose();
 
   void setTargetForceTorque();

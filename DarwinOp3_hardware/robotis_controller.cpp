@@ -24,11 +24,19 @@
 #include <ros/package.h>
 #include <ros/callback_queue.h>
 #include <fstream>
+#include <iostream>
 #include "robotis_controller/robotis_controller.h"
+#include <stdio.h>
+#include <string>
 
-#define debugPrintOn 1
+#define debugPrintOn 0
+#define debugFPrintOn 0
 using namespace robotis_framework;
 //ofstream timecheck;
+using namespace std;
+
+ofstream fout("/home/robotis/catkin_ws/src/ROBOTIS-Framework/robotis_controller/src/robotis_controller/controller.txt");
+
 RobotisController::RobotisController()
   : is_timer_running_(false),
     is_offset_enabled_(true),
@@ -42,10 +50,12 @@ RobotisController::RobotisController()
     gazebo_robot_name_("robotis")
 {
   direct_sync_write_.clear();
+  
 }
 
 void RobotisController::initializeSyncWrite()
 {
+  
   if (gazebo_mode_ == true)
     return;
 
@@ -884,6 +894,7 @@ void RobotisController::loadOffset(const std::string path)
 
 void RobotisController::process()
 {
+  // printf("process start\n");
   // avoid duplicated function call
   static bool is_process_running = false;
   if (is_process_running == true)
@@ -897,9 +908,12 @@ void RobotisController::process()
   double begin;
   double end;
   double duration;
-  if (DEBUG_PRINT)
+#if debugFPrintOn
+  begin = ros::Time::now().toSec();
+#endif  
+  // if (DEBUG_PRINT)
     //start_time = ros::Time::now();
-begin = ros::Time::now().toSec();
+
   sensor_msgs::JointState goal_state;
   sensor_msgs::JointState present_state;
 
@@ -1093,9 +1107,7 @@ begin = ros::Time::now().toSec();
         if (it.second != NULL)
           it.second->txPacket();
       }
-
       queue_mutex_.unlock();
-
       // BulkRead Tx
       for (auto& it : port_to_bulk_read_)
         it.second->txPacket();
@@ -1280,17 +1292,46 @@ begin = ros::Time::now().toSec();
           std::string     joint_name  = dxl_it.first;
           Dynamixel      *dxl         = dxl_it.second;
           DynamixelState *dxl_state   = dxl_it.second->dxl_state_;
-
+          
           if (dxl->ctrl_module_name_ == (*module_it)->getModuleName())
           {
             //do_sync_write = true;
-            DynamixelState *result_state = (*module_it)->result_[joint_name];
+            // if (joint_name.find("l_knee") != string::npos)
+            // {
+            //   // printf("if (joint_name.c_str()==r_hip_pitch)\n");
+            //   // printf("dxl->ctrl_module_name_=%s\n", dxl->ctrl_module_name_.c_str());
+            //   (*module_it)->control_mode_ = TorqueControl;
+            // }
+            // else
+            // {
+            //   (*module_it)->control_mode_ = PositionControl;
+            // }
 
+            DynamixelState *result_state = (*module_it)->result_[joint_name];
+            
             if (result_state == NULL)
             {
               ROS_ERROR("[%s] %s ", (*module_it)->getModuleName().c_str(), joint_name.c_str());
               continue;
             }
+
+
+            // printf("joint_name=%s\n", joint_name.c_str());
+            // if(dxl->ctrl_module_name_.find("online_walking_module") != string::npos)
+            // {
+            //   if (joint_name.find("r_knee") != string::npos)
+            //   {
+            //     // printf("if (joint_name.c_str()==r_hip_pitch)\n");
+            //     printf("dxl->ctrl_module_name_=%s\n", dxl->ctrl_module_name_.c_str());
+            //     (*module_it)->control_mode_ = TorqueControl;
+            //   }
+            //   else
+            //   {
+            //     (*module_it)->control_mode_ = PositionControl;
+            //   }
+            // }
+
+            
 
             // TODO: check update time stamp ?
 
@@ -1358,6 +1399,7 @@ begin = ros::Time::now().toSec();
                     port_to_sync_write_position_d_gain_[dxl->port_name_]->addParam(dxl->id_, sync_write_data);
                 }
               }
+              // printf("positionin!!!!!!\n");
             }
             else if ((*module_it)->getControlMode() == VelocityControl)
             {
@@ -1428,7 +1470,7 @@ begin = ros::Time::now().toSec();
                 uint8_t sync_write_data[2] = { 0 };
                 sync_write_data[0] = DXL_LOBYTE(curr_data);
                 sync_write_data[1] = DXL_HIBYTE(curr_data);
-
+                // printf("torquein!!!!!!\n");
                 if (port_to_sync_write_current_[dxl->port_name_] != NULL)
                   port_to_sync_write_current_[dxl->port_name_]->changeParam(dxl->id_, sync_write_data);
               }
@@ -1470,16 +1512,25 @@ begin = ros::Time::now().toSec();
   goal_joint_state_pub_.publish(goal_state);
 
   if (DEBUG_PRINT)
-  { end= ros::Time::now().toSec();
-  duration=end-begin;
-    // time_duration = ros::Time::now() - start_time;
-    // fprintf(stderr, "(%2.6f) Process() DONE \n", time_duration.nsec * 0.000001);
-    printf("%f \n", duration);
+  { 
+    // fprintf(controller,"%f \n",duration);
     //timecheck<<duration;
 		//timecheck<<endl;
   }
+#if debugFPrintOn
+  end= ros::Time::now().toSec();
+  duration=end-begin;
+  // time_duration = ros::Time::now() - start_time;
+  // fprintf(stderr, "(%2.6f) Process() DONE \n", time_duration.nsec * 0.000001);
+  
+  fout<< std ::setprecision(16)<<duration<<" "<<end<<" "<<endl;
+#endif
+#if debugPrintOn
+  printf("%f \n", duration);
+#endif
 
   is_process_running = false;
+  // printf("process end\n");
 }
 
 void RobotisController::addMotionModule(MotionModule *module)
@@ -1995,6 +2046,7 @@ void RobotisController::setJointCtrlModuleThread(const robotis_controller_msgs::
               port_to_sync_write_velocity_[_dxl->port_name_]->removeParam(_dxl->id_);
             if(port_to_sync_write_position_[_dxl->port_name_] != NULL)
               port_to_sync_write_position_[_dxl->port_name_]->removeParam(_dxl->id_);
+            printf("setJointCtrlModuuleThread torque in!!!");
           }
           break;
         }
@@ -2175,6 +2227,7 @@ void RobotisController::setCtrlModuleThread(std::string ctrl_module)
                 port_to_sync_write_current_[dxl->port_name_]->removeParam(dxl->id_);
               if (port_to_sync_write_velocity_[dxl->port_name_] != NULL)
                 port_to_sync_write_velocity_[dxl->port_name_]->removeParam(dxl->id_);
+                printf("if (mode == PositionControl)");
             }
             else if (mode == VelocityControl)
             {
@@ -2242,6 +2295,8 @@ void RobotisController::setCtrlModuleThread(std::string ctrl_module)
   {
     current_module_msg.joint_name.push_back(dxl_iter.first);
     current_module_msg.module_name.push_back(dxl_iter.second->ctrl_module_name_);
+    // printf("dxl_iter.first.c_str()=%s\n",dxl_iter.first.c_str());
+    // printf("dxl_iter.second->ctrl_module_name_.c_str()=%s\n",dxl_iter.second->ctrl_module_name_.c_str());
   }
 
   if (current_module_msg.joint_name.size() == current_module_msg.module_name.size())

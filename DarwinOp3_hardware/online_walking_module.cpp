@@ -42,14 +42,10 @@ using namespace robotis_framework;
 ////////////////////////////////////////////////////
 #define debugPrintOn 0
 #define debugFprintOn 1
-ofstream wpg;
-int samplingTime; // integer sampling time
-double samplingtime;//0.008;
-int samplingPeriod = samplingTime;
 int inverse_type = 1; // 0 : direct inverse from C , 1 : inverse solved from Matlab
 int control_on = 0; // 1 : ZMP control , 0 : nominal value
 int tq_standing=0;
-int tq_stand = 10000;//0;//3000;//4000/samplingTime;
+int tq_stand = 600;//0;//3000;//4000/samplingTime;
 //////////////////////////////////////control pannel torque
 //////////////////////////////////////////////////////////
 #define torqueModeOn 1
@@ -59,9 +55,9 @@ int tq_stand = 10000;//0;//3000;//4000/samplingTime;
 #define iCtrlOn 0
 #define CTMOn 1
 int present_control_mode=0;//1=torquemode 0=positionmode
-double Tr=0.2;//0;//0.02;//
-double Tr_walk_ssp=0.015;
-double Tr_walk_dsp=0.015;
+double Tr=0.06;//0;//0.02;//
+double Tr_walk_ssp=0.08;
+double Tr_walk_dsp=0.08;
 double _kv=2*(1.8/Tr);//0;//2*(1.8/Tr);//180;//2*(1.8/Tr);
 double _kp=(1.8/Tr)*(1.8/Tr);//0;//(1.8/Tr)*(1.8/Tr);//8100;//(1.8/Tr)*(1.8/Tr);
 // double pointmass= 1.5;//1.0;
@@ -70,7 +66,7 @@ double _kp=(1.8/Tr)*(1.8/Tr);//0;//(1.8/Tr)*(1.8/Tr);//8100;//(1.8/Tr)*(1.8/Tr);
 double _m = 1.34928+1.18888;
 // double _m = 1.34928+0.23061*2+0.14807+1.18888;
 int sensorOn=0;
-//(=0 fz: constant)(=1 fz: constant tx,ty: measured)//(=2 fz tx ty sensorLPF live)(=3 all sensorLPF live)//(=4 fz: measured)(5=fz: measured(LPF))//(=6 fz: constant tx,ty: measured(LPF))//(=7 fz tx ty : constant)
+//(=0 skywalk)
 double jointDamperGain=0.0;
 double iCtrlGain=8000;
 double jointCtrlGain=0.4;
@@ -84,7 +80,7 @@ double jointCtrlPGain[12]={
 #define cpVelFilterOn 0
 #define cp_err_limit_on 0
 #define cpZmpCurrentOn 0
-#define protectZmpEscapeOn 0
+#define protectZmpEscapeOn 
 double localSSPTimeLimit=0.3;
 int CpSwitch=2, cpDspSwitch=2, cptOn=0;
 //Cpswitch=1->cpt on //Cpswitch=2->dcm cpt on(only ssp)
@@ -101,9 +97,15 @@ int DspInitSwitch=1;
 //0=>dsp start is defined by fomula
 //1=>ssp last point = dsp first point , cpref is xcom origin
 
+int encoderIdx[12]={10,8,6,4,2,0,1,3,5,7,9,11};
+ofstream wpg;
+int samplingTime; // integer sampling time
+double samplingtime;//0.008;
+int samplingPeriod = samplingTime;
+int torqueEmergency=0;
 double result_th[12]={0,};
-double begin=0;
-double end=0;
+long double  begin=0;
+long double end=0;
 double time_duration=0;
 int loopcount=0;
 int phaseflag = 0, realphaseflag = 0, sspflag = 0, stepcheck=0;
@@ -1431,7 +1433,7 @@ void forwardkinematics(double th[]) {
 	TR23[0][1]= 0;
 	TR23[0][2]= sin(-th[3]);
 	TR23[0][3]= 0.0241;
-  TR23[1][0]= 0;
+  	TR23[1][0]= 0;
 	TR23[1][1]= 1;
 	TR23[1][2]= 0;
 	TR23[1][3]= -0.019;
@@ -3639,7 +3641,7 @@ void highpoly(double th_i[],double th_f[],double dth_i[],double dth_f[],double d
 	double _g = 9.81;
 	double _Tc = sqrt(_zc / _g);
 	double dsptime = 0.8;
-	double ssptime = 0.8;
+	double ssptime = 1.2;
 	
 	double stride_beg = 0.06;
 	double stride_mid = 0.06;
@@ -3651,7 +3653,7 @@ void highpoly(double th_i[],double th_f[],double dth_i[],double dth_f[],double d
 		{ 0,    0,  0,0,0,0,0 },
 	{ 0,    0,  0,0,0,0,0 },
 	{ 0   , L3 * 2, 0,  0,0,0,0 },
-	{ stride_beg, L3 * 2+stridey_beg, ssptime,0.2,0*pi / 180,0,0 },//I=3
+	{ stride_beg, L3 * 2+stridey_beg, ssptime,0.4,0*pi / 180,0,0 },//I=3
 	{ stride_beg, L3 * 2+stridey_beg, ssptime,dsptime,0 * pi / 180,0,0 },//I=4
   
 	{ stride_beg, L3 * 2+stridey_beg, ssptime,dsptime,0 * pi / 180,0,0 },//I=5
@@ -3787,6 +3789,10 @@ void highpoly(double th_i[],double th_f[],double dth_i[],double dth_f[],double d
 
 	double _dsp_x_des;
 	double _dsp_y_des;
+	double _dsp_dx_des;
+	double _dsp_dy_des;
+	double _dsp_ddx_des;
+	double _dsp_ddy_des;
 	double _swingrot = 0;
 	double _baserot = 0;
 	double _swingrot_time = 0;
@@ -5544,225 +5550,165 @@ void OnlineWalkingModule::sensoryFeedback(const double &rlGyroErr, const double 
 
 void OnlineWalkingModule::jointLimitCheck()
 {
-	// motor5 hip yaw r
-	if( des_joint_pos_[joint_name_to_id_["r_hip_yaw"]-1] >= 0.3)
-	{
-		des_joint_pos_[joint_name_to_id_["r_hip_yaw"]-1]=0.3;
-	}
-	else if( des_joint_pos_[joint_name_to_id_["r_hip_yaw"]-1] <= -0.3)
-	{
-		des_joint_pos_[joint_name_to_id_["r_hip_yaw"]-1]=-0.3;
-	}
-	// motor4 hip roll r
-	if( des_joint_pos_[joint_name_to_id_["r_hip_roll"]-1]  >= 0.3)
-	{
-		des_joint_pos_[joint_name_to_id_["r_hip_roll"]-1] =0.3;
-	}
-	else if( des_joint_pos_[joint_name_to_id_["r_hip_roll"]-1]  <= -0.3)
-	{
-		des_joint_pos_[joint_name_to_id_["r_hip_roll"]-1] =-0.3;
-	}
-	// motor3 hip pitch r
-	if( des_joint_pos_[joint_name_to_id_["r_hip_pitch"]-1]  >= 1.1)
-	{
-		des_joint_pos_[joint_name_to_id_["r_hip_pitch"]-1] =1.1;
-	}
-	else if( des_joint_pos_[joint_name_to_id_["r_hip_pitch"]-1]  <= 0.4)
-	{
-		des_joint_pos_[joint_name_to_id_["r_hip_pitch"]-1] =0.4;
-	}
-	// motor2 knee pitch r
-	if( des_joint_pos_[joint_name_to_id_["r_knee"]-1]   >= -1.4)
-	{
-		des_joint_pos_[joint_name_to_id_["r_knee"]-1]  =-1.4;
-	}
-	else if( des_joint_pos_[joint_name_to_id_["r_knee"]-1]   <= -1.9)
-	{
-		des_joint_pos_[joint_name_to_id_["r_knee"]-1]  =-1.9;
-	}
-	// motor1 ankle pitch r
-	if( des_joint_pos_[joint_name_to_id_["r_ank_pitch"]-1]  >= -0.4)
-	{
-		des_joint_pos_[joint_name_to_id_["r_ank_pitch"]-1] = -0.4;
-	}
-	else if( des_joint_pos_[joint_name_to_id_["r_ank_pitch"]-1]  <= -1.2)
-	{
-		des_joint_pos_[joint_name_to_id_["r_ank_pitch"]-1] = -1.2;
-	}
-	// motor0 ankle roll r
-	if( des_joint_pos_[joint_name_to_id_["r_ank_roll"]-1]  >= 0.3)
-	{
-		des_joint_pos_[joint_name_to_id_["r_ank_roll"]-1] =0.3;
-	}
-	else if( des_joint_pos_[joint_name_to_id_["r_ank_roll"]-1]  <= -0.3)
-	{
-		des_joint_pos_[joint_name_to_id_["r_ank_roll"]-1] =-0.3;
-	}
-	// motor6 hip yaw l
-	if( des_joint_pos_[joint_name_to_id_["l_hip_yaw"]-1] >= 0.3)
-	{
-		des_joint_pos_[joint_name_to_id_["l_hip_yaw"]-1]=0.3;
-	}
-	else if( des_joint_pos_[joint_name_to_id_["l_hip_yaw"]-1] <= -0.3)
-	{
-		des_joint_pos_[joint_name_to_id_["l_hip_yaw"]-1]=-0.3;
-	}
-	// motor7 hip roll l
-	if( des_joint_pos_[joint_name_to_id_["l_hip_roll"]-1]  >= 0.3)
-	{
-		des_joint_pos_[joint_name_to_id_["l_hip_roll"]-1] =0.3;
-	}
-	else if( des_joint_pos_[joint_name_to_id_["l_hip_roll"]-1]  <= -0.3)
-	{
-		des_joint_pos_[joint_name_to_id_["l_hip_roll"]-1] =-0.3;
-	}
-	// motor8 hip pitch l
-	if( des_joint_pos_[joint_name_to_id_["l_hip_pitch"]-1]  >= -0.4)
-	{
-		des_joint_pos_[joint_name_to_id_["l_hip_pitch"]-1] =-0.4;
-	}
-	else if( des_joint_pos_[joint_name_to_id_["l_hip_pitch"]-1]  <= -1.1)
-	{
-		des_joint_pos_[joint_name_to_id_["l_hip_pitch"]-1] = -1.1;
-	}
-	// motor9 knee pitch l
-	if( des_joint_pos_[joint_name_to_id_["l_knee"]-1]   >= 1.9)
-	{
-		des_joint_pos_[joint_name_to_id_["l_knee"]-1]  =1.9;
-	}
-	else if( des_joint_pos_[joint_name_to_id_["l_knee"]-1]   <= 1.4)
-	{
-		des_joint_pos_[joint_name_to_id_["l_knee"]-1]  = 1.4;
-	}
-	// motor10 ankle pitch l
-	if( des_joint_pos_[joint_name_to_id_["l_ank_pitch"]-1]  >= 1.2)
-	{
-		des_joint_pos_[joint_name_to_id_["l_ank_pitch"]-1] = 1.2;
-	}
-	else if( des_joint_pos_[joint_name_to_id_["l_ank_pitch"]-1]  <= 0.5)
-	{
-		des_joint_pos_[joint_name_to_id_["l_ank_pitch"]-1] = 0.5;
-	}
-	// motor11 ankle roll l
-	if(des_joint_pos_[joint_name_to_id_["l_ank_roll"]-1]  >= 0.3)
-	{
-		des_joint_pos_[joint_name_to_id_["l_ank_roll"]-1] =0.3;
-	}
-	else if( des_joint_pos_[joint_name_to_id_["l_ank_roll"]-1]  <= -0.3)
-	{
-		des_joint_pos_[joint_name_to_id_["l_ank_roll"]-1] =-0.3;
-	}
+	(des_joint_pos_[joint_name_to_id_["r_ank_roll"] - 1]	>=0.3) 	? des_joint_pos_[joint_name_to_id_["r_ank_roll"]-1]=0.3 	: ((des_joint_pos_[joint_name_to_id_["r_ank_roll"] - 1]		<=-0.3) 	? des_joint_pos_[joint_name_to_id_["r_ank_roll"]-1] =-0.3 	:  1);
+	(des_joint_pos_[joint_name_to_id_["r_ank_pitch"] - 1]	>=-0.4) ? des_joint_pos_[joint_name_to_id_["r_ank_pitch"]-1]= -0.4 	: ((des_joint_pos_[joint_name_to_id_["r_ank_pitch"] - 1]	<=-1.2) 	? des_joint_pos_[joint_name_to_id_["r_ank_pitch"]-1] = -1.2 :  1);
+	(des_joint_pos_[joint_name_to_id_["r_knee"] - 1]		>=-1.4) ? des_joint_pos_[joint_name_to_id_["r_knee"]-1]=-1.4 		: ((des_joint_pos_[joint_name_to_id_["r_knee"] - 1]			<=-1.9) 	? des_joint_pos_[joint_name_to_id_["r_knee"]-1]  =-1.9 		:  1);
+	(des_joint_pos_[joint_name_to_id_["r_hip_pitch"] - 1]	>=1.1) 	? des_joint_pos_[joint_name_to_id_["r_hip_pitch"]-1]=1.1 	: ((des_joint_pos_[joint_name_to_id_["r_hip_pitch"] - 1]	<=0.4) 		? des_joint_pos_[joint_name_to_id_["r_hip_pitch"]-1] =0.4 	:  1);
+	(des_joint_pos_[joint_name_to_id_["r_hip_roll"] - 1]	>=0.3) 	? des_joint_pos_[joint_name_to_id_["r_hip_roll"]-1]=0.3 	: ((des_joint_pos_[joint_name_to_id_["r_hip_roll"] - 1]		<=-0.3) 	? des_joint_pos_[joint_name_to_id_["r_hip_roll"]-1] =-0.3 	:  1);
+	(des_joint_pos_[joint_name_to_id_["r_hip_yaw"] - 1]		>=0.3) 	? des_joint_pos_[joint_name_to_id_["r_hip_yaw"]-1]=0.3 		: ((des_joint_pos_[joint_name_to_id_["r_hip_yaw"] - 1]		<=-0.3) 	? des_joint_pos_[joint_name_to_id_["r_hip_yaw"]-1]=-0.3 	:  1);
+	(des_joint_pos_[joint_name_to_id_["l_hip_yaw"] - 1]		>=0.3) 	? des_joint_pos_[joint_name_to_id_["l_hip_yaw"]-1]=0.3 		: ((des_joint_pos_[joint_name_to_id_["l_hip_yaw"] - 1]		<=-0.3) 	? des_joint_pos_[joint_name_to_id_["l_hip_yaw"]-1]=-0.3 	:  1);
+	(des_joint_pos_[joint_name_to_id_["l_hip_roll"] - 1]	>=0.3) 	? des_joint_pos_[joint_name_to_id_["l_hip_roll"]-1]=0.3 	: ((des_joint_pos_[joint_name_to_id_["l_hip_roll"] - 1]		<=-0.3) 	? des_joint_pos_[joint_name_to_id_["l_hip_roll"]-1] =-0.3 	:  1);
+	(des_joint_pos_[joint_name_to_id_["l_hip_pitch"] - 1]	>=-0.4) ? des_joint_pos_[joint_name_to_id_["l_hip_pitch"]-1]=-0.4 	: ((des_joint_pos_[joint_name_to_id_["l_hip_pitch"] - 1]	<=-1.1) 	? des_joint_pos_[joint_name_to_id_["l_hip_pitch"]-1] = -1.1 :  1);
+	(des_joint_pos_[joint_name_to_id_["l_knee"] - 1]		>=1.9) 	? des_joint_pos_[joint_name_to_id_["l_knee"]-1]=1.9 		: ((des_joint_pos_[joint_name_to_id_["l_knee"] - 1]			<=1.4) 		? des_joint_pos_[joint_name_to_id_["l_knee"]-1]  = 1.4 		:  1);
+	(des_joint_pos_[joint_name_to_id_["l_ank_pitch"] - 1]	>=1.2) 	? des_joint_pos_[joint_name_to_id_["l_ank_pitch"]-1]= 1.2 	: ((des_joint_pos_[joint_name_to_id_["l_ank_pitch"]- 1]		<=0.4) 		? des_joint_pos_[joint_name_to_id_["l_ank_pitch"]-1] = 0.4 	:  1);
+	(des_joint_pos_[joint_name_to_id_["l_ank_roll"] - 1]	>=0.3) 	? des_joint_pos_[joint_name_to_id_["l_ank_roll"]-1]=0.3 	: ((des_joint_pos_[joint_name_to_id_["l_ank_roll"] - 1]		<=-0.3) 	? des_joint_pos_[joint_name_to_id_["l_ank_roll"]-1] =-0.3 	:  1);
 }
 
 void OnlineWalkingModule::jointTorqueLimitCheck(double limit)
 {
-	// motor5 hip yaw r
-	if( des_joint_torque_[joint_name_to_id_["r_hip_yaw"]-1] >= limit)
+	(des_joint_torque_[joint_name_to_id_["r_ank_roll"] - 1]	>=limit) ? (des_joint_torque_[joint_name_to_id_["r_ank_roll"] - 1]	=limit) : ((des_joint_torque_[joint_name_to_id_["r_ank_roll"] - 1]	<=-limit)	? (des_joint_torque_[joint_name_to_id_["r_ank_roll"] - 1]	=-limit) :  1);
+	(des_joint_torque_[joint_name_to_id_["r_ank_pitch"] - 1]>=limit) ? (des_joint_torque_[joint_name_to_id_["r_ank_pitch"] - 1]	=limit) : ((des_joint_torque_[joint_name_to_id_["r_ank_pitch"] - 1]	<=-limit)	? (des_joint_torque_[joint_name_to_id_["r_ank_pitch"] - 1]	=-limit) :  1);
+	(des_joint_torque_[joint_name_to_id_["r_knee"] - 1]		>=limit) ? (des_joint_torque_[joint_name_to_id_["r_knee"] - 1]		=limit) : ((des_joint_torque_[joint_name_to_id_["r_knee"] - 1]		<=-limit)	? (des_joint_torque_[joint_name_to_id_["r_knee"] - 1]		=-limit) :  1);
+	(des_joint_torque_[joint_name_to_id_["r_hip_pitch"] - 1]>=limit) ? (des_joint_torque_[joint_name_to_id_["r_hip_pitch"] - 1]	=limit) : ((des_joint_torque_[joint_name_to_id_["r_hip_pitch"] - 1]	<=-limit) 	? (des_joint_torque_[joint_name_to_id_["r_hip_pitch"] - 1]	=-limit) :  1);
+	(des_joint_torque_[joint_name_to_id_["r_hip_roll"] - 1]	>=limit) ? (des_joint_torque_[joint_name_to_id_["r_hip_roll"] - 1]	=limit) : ((des_joint_torque_[joint_name_to_id_["r_hip_roll"] - 1]	<=-limit) 	? (des_joint_torque_[joint_name_to_id_["r_hip_roll"] - 1]	=-limit) :  1);
+	(des_joint_torque_[joint_name_to_id_["r_hip_yaw"] - 1]	>=limit) ? (des_joint_torque_[joint_name_to_id_["r_hip_yaw"] - 1]	=limit) : ((des_joint_torque_[joint_name_to_id_["r_hip_yaw"] - 1]	<=-limit) 	? (des_joint_torque_[joint_name_to_id_["r_hip_yaw"] - 1]	=-limit) :  1);
+	(des_joint_torque_[joint_name_to_id_["l_hip_yaw"] - 1]	>=limit) ? (des_joint_torque_[joint_name_to_id_["l_hip_yaw"] - 1]	=limit) : ((des_joint_torque_[joint_name_to_id_["l_hip_yaw"] - 1]	<=-limit) 	? (des_joint_torque_[joint_name_to_id_["l_hip_yaw"] - 1]	=-limit) :  1);
+	(des_joint_torque_[joint_name_to_id_["l_hip_roll"] - 1]	>=limit) ? (des_joint_torque_[joint_name_to_id_["l_hip_roll"] - 1]	=limit) : ((des_joint_torque_[joint_name_to_id_["l_hip_roll"] - 1]	<=-limit) 	? (des_joint_torque_[joint_name_to_id_["l_hip_roll"] - 1]	=-limit) :  1);
+	(des_joint_torque_[joint_name_to_id_["l_hip_pitch"] - 1]>=limit) ? (des_joint_torque_[joint_name_to_id_["l_hip_pitch"] - 1]	=limit) : ((des_joint_torque_[joint_name_to_id_["l_hip_pitch"] - 1]	<=-limit) 	? (des_joint_torque_[joint_name_to_id_["l_hip_pitch"] - 1]	=-limit) :  1);
+	(des_joint_torque_[joint_name_to_id_["l_knee"] - 1]		>=limit) ? (des_joint_torque_[joint_name_to_id_["l_knee"] - 1]		=limit) : ((des_joint_torque_[joint_name_to_id_["l_knee"] - 1]		<=-limit) 	? (des_joint_torque_[joint_name_to_id_["l_knee"] - 1]		=-limit) :  1);
+	(des_joint_torque_[joint_name_to_id_["l_ank_pitch"] - 1]>=limit) ? (des_joint_torque_[joint_name_to_id_["l_ank_pitch"] - 1]	=limit) : ((des_joint_torque_[joint_name_to_id_["l_ank_pitch"]- 1]	<=-limit) 	? (des_joint_torque_[joint_name_to_id_["l_ank_pitch"] - 1]	=-limit) :  1);
+	(des_joint_torque_[joint_name_to_id_["l_ank_roll"] - 1]	>=limit) ? (des_joint_torque_[joint_name_to_id_["l_ank_roll"] - 1]	=limit) : ((des_joint_torque_[joint_name_to_id_["l_ank_roll"] - 1]	<=-limit) 	? (des_joint_torque_[joint_name_to_id_["l_ank_roll"] - 1]	=-limit) :  1);
+}
+
+void OnlineWalkingModule::jointTorqueDegreeLimitCheck(int loopcount)
+{
+	if (loopcount<tq_standing || loopcount+tq_standing<tq_stand)
 	{
-		des_joint_torque_[joint_name_to_id_["r_hip_yaw"]-1]=limit;
+
+		// printf("tq_stand check\n");
+		torqueEmergency=torqueEmergency+ ((curr_joint_pos_[joint_name_to_id_["r_ank_roll"] - 1]		>=0.3) 	? 1,printf("r_ank_roll =%lf\n",curr_joint_pos_[joint_name_to_id_["r_ank_roll"] - 1]) : ((curr_joint_pos_[joint_name_to_id_["r_ank_roll"] - 1]		<=-0.3) ? 		1,printf("r_ank_roll =%lf\n",curr_joint_pos_[joint_name_to_id_["r_ank_roll"] - 1]) :  0));
+		torqueEmergency=torqueEmergency+ ((curr_joint_pos_[joint_name_to_id_["r_ank_pitch"] - 1]	>=0.4) 	? 1,printf("r_ank_pitch =%lf\n",curr_joint_pos_[joint_name_to_id_["r_ank_pitch"] - 1]) : ((curr_joint_pos_[joint_name_to_id_["r_ank_pitch"] - 1]	<=-1.2) ? 	1,printf("r_ank_pitch = %lf\n",curr_joint_pos_[joint_name_to_id_["r_ank_pitch"] - 1]) :  0));
+		torqueEmergency=torqueEmergency+ ((curr_joint_pos_[joint_name_to_id_["r_knee"] - 1]			>=0.3) 	? 1,printf("r_knee =%lf\n",curr_joint_pos_[joint_name_to_id_["r_knee"] - 1]) : ((curr_joint_pos_[joint_name_to_id_["r_knee"] - 1]					<=-1.9) ? 			1,printf("r_knee =%lf\n",curr_joint_pos_[joint_name_to_id_["r_knee"] - 1]) :  0));
+		torqueEmergency=torqueEmergency+ ((curr_joint_pos_[joint_name_to_id_["r_hip_pitch"] - 1]	>=0.8) 	? 1,printf("r_hip_pitch =%lf\n",curr_joint_pos_[joint_name_to_id_["r_hip_pitch"] - 1]) : ((curr_joint_pos_[joint_name_to_id_["r_hip_pitch"] - 1]	<=-0.5) ? 	1,printf("r_hip_pitch =%lf\n",curr_joint_pos_[joint_name_to_id_["r_hip_pitch"] - 1]) :  0));
+		torqueEmergency=torqueEmergency+ ((curr_joint_pos_[joint_name_to_id_["r_hip_roll"] - 1]		>=0.3) 	? 1,printf("r_hip_roll =%lf\n",curr_joint_pos_[joint_name_to_id_["r_hip_roll"] - 1]) : ((curr_joint_pos_[joint_name_to_id_["r_hip_roll"] - 1]		<=-0.3) ? 		1,printf("r_hip_roll =%lf\n",curr_joint_pos_[joint_name_to_id_["r_hip_roll"] - 1]) :  0));
+		torqueEmergency=torqueEmergency+ ((curr_joint_pos_[joint_name_to_id_["r_hip_yaw"] - 1]		>=0.3) 	? 1,printf("r_hip_yaw =%lf\n",curr_joint_pos_[joint_name_to_id_["r_hip_yaw"] - 1]) : ((curr_joint_pos_[joint_name_to_id_["r_hip_yaw"] - 1]			<=-0.3) ? 	1,printf("r_hip_yaw =%lf\n",curr_joint_pos_[joint_name_to_id_["r_hip_yaw"] - 1]) :  0));
+		torqueEmergency=torqueEmergency+ ((curr_joint_pos_[joint_name_to_id_["l_hip_yaw"] - 1]		>=0.3) 	? 1,printf("l_hip_yaw =%lf\n",curr_joint_pos_[joint_name_to_id_["l_hip_yaw"] - 1]) : ((curr_joint_pos_[joint_name_to_id_["l_hip_yaw"] - 1]			<=-0.3) ? 	1,printf("l_hip_yaw =%lf\n",curr_joint_pos_[joint_name_to_id_["l_hip_yaw"] - 1]) :  0));
+		torqueEmergency=torqueEmergency+ ((curr_joint_pos_[joint_name_to_id_["l_hip_roll"] - 1]		>=0.3) 	? 1,printf("l_hip_roll =%lf\n",curr_joint_pos_[joint_name_to_id_["l_hip_roll"] - 1]) : ((curr_joint_pos_[joint_name_to_id_["l_hip_roll"] - 1]		<=-0.3) ? 		1,printf("l_hip_roll =%lf\n",curr_joint_pos_[joint_name_to_id_["l_hip_roll"] - 1]) :  0));
+		torqueEmergency=torqueEmergency+ ((curr_joint_pos_[joint_name_to_id_["l_hip_pitch"] - 1]	>=0.5) ? 1,printf("l_hip_pitch =%lf\n",curr_joint_pos_[joint_name_to_id_["l_hip_pitch"] - 1]) : ((curr_joint_pos_[joint_name_to_id_["l_hip_pitch"] - 1]	<=-0.8) ? 	1,printf("l_hip_pitch =%lf\n",curr_joint_pos_[joint_name_to_id_["l_hip_pitch"] - 1]) :  0));
+		torqueEmergency=torqueEmergency+ ((curr_joint_pos_[joint_name_to_id_["l_knee"] - 1]			>=1.9) 	? 1,printf("l_knee =%lf\n",curr_joint_pos_[joint_name_to_id_["l_knee"] - 1]) : ((curr_joint_pos_[joint_name_to_id_["l_knee"] - 1]					<=-0.3) ? 			1,printf("l_knee =%lf\n",curr_joint_pos_[joint_name_to_id_["l_knee"] - 1]) :  0));
+		torqueEmergency=torqueEmergency+ ((curr_joint_pos_[joint_name_to_id_["l_ank_pitch"] - 1]	>=1.2) 	? 1,printf("l_ank_pitch =%lf\n",curr_joint_pos_[joint_name_to_id_["l_ank_pitch"] - 1]) : ((curr_joint_pos_[joint_name_to_id_["l_ank_pitch"]- 1]		<=-0.4) ? 	1,printf("l_ank_pitch =%lf\n",curr_joint_pos_[joint_name_to_id_["l_ank_pitch"] - 1]) :  0));
+		torqueEmergency=torqueEmergency+ ((curr_joint_pos_[joint_name_to_id_["l_ank_roll"] - 1]		>=0.3) 	? 1,printf("l_ank_roll =%lf\n",curr_joint_pos_[joint_name_to_id_["l_ank_roll"] - 1]) : ((curr_joint_pos_[joint_name_to_id_["l_ank_roll"] - 1]		<=-0.3) ? 		1,printf("l_ank_roll =%lf\n",curr_joint_pos_[joint_name_to_id_["l_ank_roll"] - 1]) :  0));
 	}
-	else if( des_joint_torque_[joint_name_to_id_["r_hip_yaw"]-1] <= -limit)
+	else
 	{
-		des_joint_torque_[joint_name_to_id_["r_hip_yaw"]-1]=-limit;
+		// printf("wpg check\n");
+		// torqueEmergency=torqueEmergency+ ((curr_joint_pos_[joint_name_to_id_["r_ank_roll"] - 1]		>=0.3) 	? 1 : ((curr_joint_pos_[joint_name_to_id_["r_ank_roll"] - 1]	<=-0.3) ? 1 :  0));
+		// torqueEmergency=torqueEmergency+ ((curr_joint_pos_[joint_name_to_id_["r_ank_pitch"] - 1]	>=-0.4) ? 1 : ((curr_joint_pos_[joint_name_to_id_["r_ank_pitch"] - 1]	<=-1.2) ? 1 :  0));
+		// torqueEmergency=torqueEmergency+ ((curr_joint_pos_[joint_name_to_id_["r_knee"] - 1]			>=-1.4) ? 1 : ((curr_joint_pos_[joint_name_to_id_["r_knee"] - 1]		<=-1.9) ? 1 :  0));
+		// torqueEmergency=torqueEmergency+ ((curr_joint_pos_[joint_name_to_id_["r_hip_pitch"] - 1]	>=1.1) 	? 1 : ((curr_joint_pos_[joint_name_to_id_["r_hip_pitch"] - 1]	<=0.4) 	? 1 :  0));
+		// torqueEmergency=torqueEmergency+ ((curr_joint_pos_[joint_name_to_id_["r_hip_roll"] - 1]		>=0.3) 	? 1 : ((curr_joint_pos_[joint_name_to_id_["r_hip_roll"] - 1]	<=-0.3) ? 1 :  0));
+		// torqueEmergency=torqueEmergency+ ((curr_joint_pos_[joint_name_to_id_["r_hip_yaw"] - 1]		>=0.3) 	? 1 : ((curr_joint_pos_[joint_name_to_id_["r_hip_yaw"] - 1]		<=-0.3) ? 1 :  0));
+		// torqueEmergency=torqueEmergency+ ((curr_joint_pos_[joint_name_to_id_["l_hip_yaw"] - 1]		>=0.3) 	? 1 : ((curr_joint_pos_[joint_name_to_id_["l_hip_yaw"] - 1]		<=-0.3) ? 1 :  0));
+		// torqueEmergency=torqueEmergency+ ((curr_joint_pos_[joint_name_to_id_["l_hip_roll"] - 1]		>=0.3) 	? 1 : ((curr_joint_pos_[joint_name_to_id_["l_hip_roll"] - 1]	<=-0.3) ? 1 :  0));
+		// torqueEmergency=torqueEmergency+ ((curr_joint_pos_[joint_name_to_id_["l_hip_pitch"] - 1]	>=-0.4) ? 1 : ((curr_joint_pos_[joint_name_to_id_["l_hip_pitch"] - 1]	<=-1.1) ? 1 :  0));
+		// torqueEmergency=torqueEmergency+ ((curr_joint_pos_[joint_name_to_id_["l_knee"] - 1]			>=1.9) 	? 1 : ((curr_joint_pos_[joint_name_to_id_["l_knee"] - 1]		<=1.4) 	? 1 :  0));
+		// torqueEmergency=torqueEmergency+ ((curr_joint_pos_[joint_name_to_id_["l_ank_pitch"] - 1]	>=1.2) 	? 1 : ((curr_joint_pos_[joint_name_to_id_["l_ank_pitch"]- 1]	<=0.4) 	? 1 :  0));
+		// torqueEmergency=torqueEmergency+ ((curr_joint_pos_[joint_name_to_id_["l_ank_roll"] - 1]		>=0.3) 	? 1 : ((curr_joint_pos_[joint_name_to_id_["l_ank_roll"] - 1]	<=-0.3) ? 1 :  0));
+		
+		torqueEmergency=torqueEmergency+ ((curr_joint_pos_[joint_name_to_id_["r_ank_roll"] - 1]		>=0.4) 	? 1,printf("r_ank_roll =%lf\n",curr_joint_pos_[joint_name_to_id_["r_ank_roll"] - 1]) : ((curr_joint_pos_[joint_name_to_id_["r_ank_roll"] - 1]	<=-0.4) ? 1,printf("r_ank_roll =%lf\n",curr_joint_pos_[joint_name_to_id_["r_ank_roll"] - 1]) :  0));
+		torqueEmergency=torqueEmergency+ ((curr_joint_pos_[joint_name_to_id_["r_ank_pitch"] - 1]	>=0.4) 	? 1,printf("r_ank_pitch =%lf\n",curr_joint_pos_[joint_name_to_id_["r_ank_pitch"] - 1]) : ((curr_joint_pos_[joint_name_to_id_["r_ank_pitch"] - 1]	<=-1.3) ? 1,printf("r_ank_pitch =%lf\n",curr_joint_pos_[joint_name_to_id_["r_ank_pitch"] - 1]) :  0));
+		torqueEmergency=torqueEmergency+ ((curr_joint_pos_[joint_name_to_id_["r_knee"] - 1]			>=0.4) 	? 1,printf("r_knee =%lf\n",curr_joint_pos_[joint_name_to_id_["r_knee"] - 1]) : ((curr_joint_pos_[joint_name_to_id_["r_knee"] - 1]		<=-2.1) ? 1,printf("r_knee =%lf\n",curr_joint_pos_[joint_name_to_id_["r_knee"] - 1]) :  0));
+		torqueEmergency=torqueEmergency+ ((curr_joint_pos_[joint_name_to_id_["r_hip_pitch"] - 1]	>=1.4) 	? 1,printf("r_hip_pitch =%lf\n",curr_joint_pos_[joint_name_to_id_["r_hip_pitch"] - 1]) : ((curr_joint_pos_[joint_name_to_id_["r_hip_pitch"] - 1]	<=-0.3) ? 1,printf("r_hip_pitch =%lf\n",curr_joint_pos_[joint_name_to_id_["r_hip_pitch"] - 1]) :  0));
+		torqueEmergency=torqueEmergency+ ((curr_joint_pos_[joint_name_to_id_["r_hip_roll"] - 1]		>=0.3) 	? 1,printf("r_hip_roll =%lf\n",curr_joint_pos_[joint_name_to_id_["r_hip_roll"] - 1]) : ((curr_joint_pos_[joint_name_to_id_["r_hip_roll"] - 1]	<=-0.3) ? 1,printf("r_hip_roll =%lf\n",curr_joint_pos_[joint_name_to_id_["r_hip_roll"] - 1]) :  0));
+		torqueEmergency=torqueEmergency+ ((curr_joint_pos_[joint_name_to_id_["r_hip_yaw"] - 1]		>=0.1) 	? 1,printf("r_hip_yaw =%lf\n",curr_joint_pos_[joint_name_to_id_["r_hip_yaw"] - 1]) : ((curr_joint_pos_[joint_name_to_id_["r_hip_yaw"] - 1]		<=-0.3) ? 1,printf("r_hip_yaw =%lf\n",curr_joint_pos_[joint_name_to_id_["r_hip_yaw"] - 1]) :  0));
+		torqueEmergency=torqueEmergency+ ((curr_joint_pos_[joint_name_to_id_["l_hip_yaw"] - 1]		>=0.3) 	? 1,printf("l_hip_yaw =%lf\n",curr_joint_pos_[joint_name_to_id_["l_hip_yaw"] - 1]) : ((curr_joint_pos_[joint_name_to_id_["l_hip_yaw"] - 1]		<=-0.1) ? 1,printf("l_hip_yaw =%lf\n",curr_joint_pos_[joint_name_to_id_["l_hip_yaw"] - 1]) :  0));
+		torqueEmergency=torqueEmergency+ ((curr_joint_pos_[joint_name_to_id_["l_hip_roll"] - 1]		>=0.3) 	? 1,printf("l_hip_roll =%lf\n",curr_joint_pos_[joint_name_to_id_["l_hip_roll"] - 1]) : ((curr_joint_pos_[joint_name_to_id_["l_hip_roll"] - 1]	<=-0.3) ? 1,printf("l_hip_roll =%lf\n",curr_joint_pos_[joint_name_to_id_["l_hip_roll"] - 1]) :  0));
+		torqueEmergency=torqueEmergency+ ((curr_joint_pos_[joint_name_to_id_["l_hip_pitch"] - 1]	>=0.3) 	? 1,printf("l_hip_pitch =%lf\n",curr_joint_pos_[joint_name_to_id_["l_hip_pitch"] - 1]) : ((curr_joint_pos_[joint_name_to_id_["l_hip_pitch"] - 1]	<=-1.4) ? 1,printf("l_hip_pitch =%lf\n",curr_joint_pos_[joint_name_to_id_["l_hip_pitch"] - 1]) :  0));
+		torqueEmergency=torqueEmergency+ ((curr_joint_pos_[joint_name_to_id_["l_knee"] - 1]			>=2.1) 	? 1,printf("l_knee =%lf\n",curr_joint_pos_[joint_name_to_id_["l_knee"] - 1]) : ((curr_joint_pos_[joint_name_to_id_["l_knee"] - 1]		<=-0.4) ? 1,printf("l_knee =%lf\n",curr_joint_pos_[joint_name_to_id_["l_knee"] - 1]) :  0));
+		torqueEmergency=torqueEmergency+ ((curr_joint_pos_[joint_name_to_id_["l_ank_pitch"] - 1]	>=1.3) 	? 1,printf("l_ank_pitch =%lf\n",curr_joint_pos_[joint_name_to_id_["l_ank_pitch"] - 1]) : ((curr_joint_pos_[joint_name_to_id_["l_ank_pitch"]- 1]	<=-0.4) ? 1,printf("l_ank_pitch =%lf\n",curr_joint_pos_[joint_name_to_id_["l_ank_pitch"] - 1]) :  0));
+		torqueEmergency=torqueEmergency+ ((curr_joint_pos_[joint_name_to_id_["l_ank_roll"] - 1]		>=0.4) 	? 1,printf("l_ank_roll =%lf\n",curr_joint_pos_[joint_name_to_id_["l_ank_roll"] - 1]) : ((curr_joint_pos_[joint_name_to_id_["l_ank_roll"] - 1]	<=-0.4) ? 1,printf("l_ank_roll =%lf\n",curr_joint_pos_[joint_name_to_id_["l_ank_roll"] - 1]) :  0));
 	}
-	// motor4 hip roll r
-	if( des_joint_torque_[joint_name_to_id_["r_hip_roll"]-1]  >= limit)
+	
+	if (torqueEmergency>0)
 	{
-		des_joint_torque_[joint_name_to_id_["r_hip_roll"]-1] =limit;
+		// printf("emergency!!!!!!!!!!!!!!!!!");
+		des_joint_torque_[joint_name_to_id_["r_hip_yaw"]-1]     = 0;
+		des_joint_torque_[joint_name_to_id_["r_hip_roll"]-1]    = 0;
+		des_joint_torque_[joint_name_to_id_["r_hip_pitch"]-1]   = 0;
+		des_joint_torque_[joint_name_to_id_["r_knee"]-1]        = 0;
+		des_joint_torque_[joint_name_to_id_["r_ank_pitch"]-1]   = 0;
+		des_joint_torque_[joint_name_to_id_["r_ank_roll"]-1]   	= 0;
+		
+		des_joint_torque_[joint_name_to_id_["l_hip_yaw"]-1]     = 0;
+		des_joint_torque_[joint_name_to_id_["l_hip_roll"]-1]    = 0;
+		des_joint_torque_[joint_name_to_id_["l_hip_pitch"]-1]   = 0;
+		des_joint_torque_[joint_name_to_id_["l_knee"]-1]        = 0;
+		des_joint_torque_[joint_name_to_id_["l_ank_pitch"]-1]  	= 0;
+		des_joint_torque_[joint_name_to_id_["l_ank_roll"]-1]   	= 0;
 	}
-	else if( des_joint_torque_[joint_name_to_id_["r_hip_roll"]-1]  <= -limit)
+}
+
+void OnlineWalkingModule::EEconstDefine(int phase)
+{
+	if (sensorOn==0)
 	{
-		des_joint_torque_[joint_name_to_id_["r_hip_roll"]-1] =-limit;
+		f_Xl = 0.0;
+		f_Yl = 0.0;
+		tq_Xl = 0.0;
+		tq_Yl = 0.0;
+		tq_Zl = 0.0;
+		f_Zl = 0.0;
+		f_Xr = 0.0;
+		f_Yr = 0.0;
+		tq_Zr = 0.0;
+		tq_Xr = 0.0;
+		tq_Yr = 0.0;
+		f_Zr = 0.0;
 	}
-	// motor3 hip pitch r
-	if( des_joint_torque_[joint_name_to_id_["r_hip_pitch"]-1]  >= limit)
+	else if(sensorOn==1)
 	{
-		des_joint_torque_[joint_name_to_id_["r_hip_pitch"]-1] =limit;
-	}
-	else if( des_joint_torque_[joint_name_to_id_["r_hip_pitch"]-1]  <= -limit)
-	{
-		des_joint_torque_[joint_name_to_id_["r_hip_pitch"]-1] = -limit;
-	}
-	// motor2 knee pitch r
-	if( des_joint_torque_[joint_name_to_id_["r_knee"]-1]   >= limit)
-	{
-		des_joint_torque_[joint_name_to_id_["r_knee"]-1]  =limit;
-	}
-	else if( des_joint_torque_[joint_name_to_id_["r_knee"]-1]   <= -limit)
-	{
-		des_joint_torque_[joint_name_to_id_["r_knee"]-1]  =-limit;
-	}
-	// motor1 ankle pitch r
-	if( des_joint_torque_[joint_name_to_id_["r_ank_pitch"]-1]  >= limit)
-	{
-		des_joint_torque_[joint_name_to_id_["r_ank_pitch"]-1] = limit;
-	}
-	else if( des_joint_torque_[joint_name_to_id_["r_ank_pitch"]-1]  <= -limit)
-	{
-		des_joint_torque_[joint_name_to_id_["r_ank_pitch"]-1] = -limit;
-	}
-	// motor0 ankle roll r
-	if( des_joint_torque_[joint_name_to_id_["r_ank_roll"]-1]  >= limit)
-	{
-		des_joint_torque_[joint_name_to_id_["r_ank_roll"]-1] =limit;
-	}
-	else if( des_joint_torque_[joint_name_to_id_["r_ank_roll"]-1]  <= -limit)
-	{
-		des_joint_torque_[joint_name_to_id_["r_ank_roll"]-1] =-limit;
-	}
-	// motor6 hip yaw l
-	if( des_joint_torque_[joint_name_to_id_["l_hip_yaw"]-1] >= limit)
-	{
-		des_joint_torque_[joint_name_to_id_["l_hip_yaw"]-1]=limit;
-	}
-	else if( des_joint_torque_[joint_name_to_id_["l_hip_yaw"]-1] <= -limit)
-	{
-		des_joint_torque_[joint_name_to_id_["l_hip_yaw"]-1]=-limit;
-	}
-	// motor7 hip roll l
-	if( des_joint_torque_[joint_name_to_id_["l_hip_roll"]-1]  >= limit)
-	{
-		des_joint_torque_[joint_name_to_id_["l_hip_roll"]-1] =limit;
-	}
-	else if( des_joint_torque_[joint_name_to_id_["l_hip_roll"]-1]  <= -limit)
-	{
-		des_joint_torque_[joint_name_to_id_["l_hip_roll"]-1] =-limit;
-	}
-	// motor8 hip pitch l
-	if( des_joint_torque_[joint_name_to_id_["l_hip_pitch"]-1]  >= limit)
-	{
-		des_joint_torque_[joint_name_to_id_["l_hip_pitch"]-1] =limit;
-	}
-	else if( des_joint_torque_[joint_name_to_id_["l_hip_pitch"]-1]  <= -limit)
-	{
-		des_joint_torque_[joint_name_to_id_["l_hip_pitch"]-1] = -limit;
-	}
-	// motor9 knee pitch l
-	if( des_joint_torque_[joint_name_to_id_["l_knee"]-1]   >= limit)
-	{
-		des_joint_torque_[joint_name_to_id_["l_knee"]-1]  =limit;
-	}
-	else if( des_joint_torque_[joint_name_to_id_["l_knee"]-1]   <=-limit)
-	{
-		des_joint_torque_[joint_name_to_id_["l_knee"]-1]  = -limit;
-	}
-	// motor10 ankle pitch l
-	if( des_joint_torque_[joint_name_to_id_["l_ank_pitch"]-1]  >= limit)
-	{
-		des_joint_torque_[joint_name_to_id_["l_ank_pitch"]-1] = limit;
-	}
-	else if( des_joint_torque_[joint_name_to_id_["l_ank_pitch"]-1]  <=-limit)
-	{
-		des_joint_torque_[joint_name_to_id_["l_ank_pitch"]-1] =-limit;
-	}
-	// motor11 ankle roll l
-	if(des_joint_torque_[joint_name_to_id_["l_ank_roll"]-1]  >= limit)
-	{
-		des_joint_torque_[joint_name_to_id_["l_ank_roll"]-1] =limit;
-	}
-	else if( des_joint_torque_[joint_name_to_id_["l_ank_roll"]-1]  <= -limit)
-	{
-		des_joint_torque_[joint_name_to_id_["l_ank_roll"]-1] =-limit;
+		f_Xl = 0.0;
+		f_Yl = 0.0;
+		tq_Xl = 0.0;
+		tq_Yl = 0.0;
+		tq_Zl = 0.0;
+		if (phase == 1) // SSP_R 
+		{
+			f_Zl = 0.0;
+		}
+		else if (phase == 0) // SSP_L 
+		{
+			f_Zl = d_Fz_SSP;
+		}
+		else if (phase == 3) // DSP_R 
+		{
+			f_Zl =  d_Fz_DSP;//ps_LforceZ_last;//
+		}
+		else if (phase == 2) // DSP_L
+		{
+			f_Zl = d_Fz_DSP;//ps_LforceZ_last;//
+		}
+		f_Xr = 0.0;
+		f_Yr = 0.0;
+		tq_Zr = 0.0;
+		tq_Xr = 0.0;
+		tq_Yr = 0.0;
+		if (phase == 1) // SSP_R 
+		{
+			f_Zr = d_Fz_SSP;
+		}
+		else if (phase == 0) // SSP_L 
+		{
+			f_Zr = 0.0;
+		}
+		else if (phase == 3) // DSP_R 
+		{
+			f_Zr = d_Fz_DSP;//ps_RforceZ_last;//
+		}
+		else if (phase == 2) // DSP_L
+		{
+			f_Zr = d_Fz_DSP;//ps_RforceZ_last;//
+		}
 	}
 }
 
@@ -5912,56 +5858,8 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 		ta.x[0][10] = ta11;
 		ta.x[0][11] = ta12;
 
-			Matrix_3X1 Pc11, Pc22, Pc33, Pc44, Pc55, Pc66, Pc77, Pc88, Pc99, Pc1010, Pc1111, Pc1212;
-			//Â©Ã¶Â¡Ã¬Â¡ÃOAÂ©Â¬Â¨Ã¶E AOÂ¡Â¤A
-		//    Pc11.x[0][0] = -0.00296;
-		//    Pc11.x[1][0] = -0.00882;
-		//    Pc11.x[2][0] = -0.02692;
-
-		//    Pc22.x[0][0] = -0.01991;
-		//    Pc22.x[1][0] = -0.00006;
-		//    Pc22.x[2][0] = 0.01126;
-
-		//    Pc33.x[0][0] = 0.00729;
-		//    Pc33.x[1][0] = 0.00031;
-		//    Pc33.x[2][0] = -0.03762;
-
-			//    Pc44.x[0][0] = 0.00095;
-			//    Pc44.x[1][0] = 0.00007;
-			//    Pc44.x[2][0] = -0.06731;
-
-		//    Pc55.x[0][0] = -0.01991;
-		//    Pc55.x[1][0] = -0.00006;
-		//    Pc55.x[2][0] = -0.01108;
-
-		//    Pc66.x[0][0] = 0.00157;
-		//    Pc66.x[1][0] = 0;
-		//    Pc66.x[2][0] = 0.0196;
-
-		//    Pc77.x[0][0] = 0.00157;
-		//    Pc77.x[1][0] = 0;
-		//    Pc77.x[2][0] = 0.0196;
-
-		//    Pc88.x[0][0] = -0.01991;
-		//    Pc88.x[1][0] = -0.00003;
-		//    Pc88.x[2][0] = -0.01108;
-
-		//    Pc99.x[0][0] = 0.00095;
-		//    Pc99.x[1][0] = -0.00009;
-		//    Pc99.x[2][0] = -0.06731;
-
-		//    Pc1010.x[0][0] = 0.00729;
-		//    Pc1010.x[1][0] = -0.00038;
-		//    Pc1010.x[2][0] = -0.03762;
-
-		//    Pc1111.x[0][0] = -0.01991;
-		//    Pc1111.x[1][0] = -0.00003;
-		//    Pc1111.x[2][0] = 0.01126;
-
-		//    Pc1212.x[0][0] = -0.00318;
-		//    Pc1212.x[1][0] = 0.00845;
-		//    Pc1212.x[2][0] = -0.02687;
-		//Â©Ã¶ICI original
+		Matrix_3X1 Pc11, Pc22, Pc33, Pc44, Pc55, Pc66, Pc77, Pc88, Pc99, Pc1010, Pc1111, Pc1212;
+		
 
 		Pc11.x[0][0] = 0.02373;
 		Pc11.x[1][0] = -0.01037;
@@ -6020,54 +5918,6 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 		// Pc1212.x[2][0] = -0.0259953;//op2
 		//webots original
 
-		// Pc11.x[0][0] = -0.070;
-		// Pc11.x[1][0] = 0.000;
-		// Pc11.x[2][0] = -0.048;
-
-		// Pc22.x[0][0] = -0.011;
-		// Pc22.x[1][0] = 0.033;
-		// Pc22.x[2][0] = 0.000;
-
-		// Pc33.x[0][0] = -0.002;
-		// Pc33.x[1][0] = 0.066;
-		// Pc33.x[2][0] = -0.183;
-
-		// Pc44.x[0][0] = 0.022;
-		// Pc44.x[1][0] = 0.007;
-		// Pc44.x[2][0] = -0.168;
-
-		// Pc55.x[0][0] = -0.068;
-		// Pc55.x[1][0] = 0.000;
-		// Pc55.x[2][0] = 0.000;
-
-		// Pc66.x[0][0] = -0.012;
-		// Pc66.x[1][0] = 0;
-		// Pc66.x[2][0] = -0.025;
-
-		// Pc77.x[0][0] = 0.012;
-		// Pc77.x[1][0] = 0.000;
-		// Pc77.x[2][0] = -0.025;
-
-		// Pc88.x[0][0] = -0.068;
-		// Pc88.x[1][0] = 0.000;
-		// Pc88.x[2][0] = 0.000;
-
-		// Pc99.x[0][0] = 0.022;
-		// Pc99.x[1][0] = -0.007;
-		// Pc99.x[2][0] = -0.168;
-
-		// Pc1010.x[0][0] = -0.002;
-		// Pc1010.x[1][0] = -0.066;
-		// Pc1010.x[2][0] = -0.183;
-
-		// Pc1111.x[0][0] = -0.011;
-		// Pc1111.x[1][0] = -0.033;
-		// Pc1111.x[2][0] = 0.000;
-
-		// Pc1212.x[0][0] = -0.070;
-		// Pc1212.x[1][0] = 0.000;
-		// Pc1212.x[2][0] = -0.048;
-		//from op3_kinematics_dynamics.cpp
 
 		Matrix_M3X12 PositionC;
 
@@ -6084,7 +5934,6 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 		PositionC.x[0][10] = Pc1111;
 		PositionC.x[0][11] = Pc1212;
 
-		//Â¢Â¬Â¥Ã¬AÂ¨ÃAuÂ¡Â¤Â¢Ã§
 		double m1, m2, m3, m4, m5, m6, m7, m8, m9, m10, m11, m12;
 
     	m1 = 0.06934;//0.0794462; //0.06934// Â¢Â¥UAÂ¡Ã : kg
@@ -6413,8 +6262,8 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 			_lsx_des = 0;
 			_lsy_des = 2 * L3;
 			_lsz_des = 0;
-			torqueStandingCount=0;
-			torqueStandCount=0;
+			// torqueStandingCount=0;
+			// torqueStandCount=0;
 			for(int k=0 ;k<12;k++)
 			{
 				_th[k]=_th_i[k];
@@ -6436,6 +6285,7 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 			}
 			_i = 2;
 			_t=samplingtime;
+			
 		}
 
 		if(torqueStandingCount<tq_standing)
@@ -6851,7 +6701,6 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 			ddq_Jdot_R_p.x[4][2] = 0.0;
 			ddq_Jdot_R_p.x[5][2] = 0.0;
 
-
 			ddq_Jdot_R_p.x[0][3] = 0.0;
 			ddq_Jdot_R_p.x[1][3] = 0.0;
 			ddq_Jdot_R_p.x[2][3] = 0.0;
@@ -6859,14 +6708,12 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 			ddq_Jdot_R_p.x[4][3] = 0.0;
 			ddq_Jdot_R_p.x[5][3] = 0.0;
 
-	
 			ddq_Jdot_R_p.x[0][4] = 0.0;
 			ddq_Jdot_R_p.x[1][4] = 0.0;
 			ddq_Jdot_R_p.x[2][4] = 0.0;
 			ddq_Jdot_R_p.x[3][4] = 0.0;
 			ddq_Jdot_R_p.x[4][4] = 0.0;
 			ddq_Jdot_R_p.x[5][4] = 0.0;
-
 
 			ddq_Jdot_R_p.x[0][5] = 0.0;
 			ddq_Jdot_R_p.x[1][5] = 0.0;
@@ -6875,26 +6722,21 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 			ddq_Jdot_R_p.x[4][5] = 0.0;
 			ddq_Jdot_R_p.x[5][5] = 0.0;
 
-			
 			_w_LE_n.x[0][0]=0;
 			_w_LE_n.x[1][0]=0;
 			_w_LE_n.x[2][0]=0;
-
 
 			_w_RE_n.x[0][0]=0;
 			_w_RE_n.x[1][0]=0;
 			_w_RE_n.x[2][0]=0;
 
-
 			_dw_LE_n.x[0][0]=0;
 			_dw_LE_n.x[1][0]=0;
 			_dw_LE_n.x[2][0]=0;
 
-
 			_dw_RE_n.x[0][0]=0;
 			_dw_RE_n.x[1][0]=0;
 			_dw_RE_n.x[2][0]=0;
-
 
 			Mdth_d.x[0][0]=0.0;
 			Mdth_d.x[1][0]=0.0;
@@ -7283,108 +7125,25 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 			// des_joint_torque_[joint_name_to_id_["l_ank_pitch"]-1]  = 0;
 			// des_joint_torque_[joint_name_to_id_["l_ank_roll"]-1]   = 0;
 #endif
-			// pre_force_R[0]=forceXr;
-			// pre_force_R[1]=forceYr;
-			// pre_force_R[2]=forceZr;
-		
-			// pre_force_L[0]=forceXl;
-			// pre_force_L[1]=forceYl;
-			// pre_force_L[2]=forceZl;
-		
-		
-			// pre_torque_R[0]=torquexr;
-			// pre_torque_R[1]=torqueyr;
-			// pre_torque_R[2]=torquezr;
-		
-			// pre_torque_L[0]=torquexl;
-			// pre_torque_L[1]=torqueyl;
-			// pre_torque_L[2]=torquezl;
-		
-			// pre_force_F_R[0]=force_F_R[0];
-			// pre_force_F_R[1]=force_F_R[1];
-			// pre_force_F_R[2]=force_F_R[2];
-		
-			// pre_force_F_L[0]=force_F_L[0];
-			// pre_force_F_L[1]=force_F_L[1];
-			// pre_force_F_L[2]=force_F_L[2];
-		
-		
-			// pre_torque_F_R[0]= torque_F_R[0];
-			// pre_torque_F_R[1]= torque_F_R[1];
-			// pre_torque_F_R[2]= torque_F_R[2];
-		
-			// pre_torque_F_L[0]= torque_F_L[0];
-			// pre_torque_F_L[1]= torque_F_L[1];
-			// pre_torque_F_L[2]= torque_F_L[2];
-
-			// if(torqueStandingCount==2){
-             
-			// 	force_F_R[0]=forceXr;
-			// 	force_F_R[1]=forceYr;
-			// 	force_F_R[2]=forceZr;
 			
-			// 	force_F_L[0]=forceXl;
-			// 	force_F_L[1]=forceYl;
-			// 	force_F_L[2]=forceZl;
-			
-			
-			// 	torque_F_R[0]=torquexr;
-			// 	torque_F_R[1]=torqueyr;
-			// 	torque_F_R[2]=torquezr;
-			
-			// 	torque_F_L[0]=torquexl;
-			// 	torque_F_L[1]=torqueyl;
-			// 	torque_F_L[2]=torquezl;
-		
-			// }
-		
-			// else if(torqueStandingCount>=3){
-			// 	LPF(10,pre_force_R,pre_force_F_R,force_F_R);
-			// 	LPF(10,pre_force_L,pre_force_F_L,force_F_L);
-			
-			// 	LPF(10,pre_torque_R,pre_torque_F_R,torque_F_R);
-			// 	LPF(10,pre_torque_L,pre_torque_F_L,torque_F_L);
-			// }
-		
-			// else{
-		
-			// 	force_F_R[0]=forceXr;
-			// 	force_F_R[1]=forceYr;
-			// 	force_F_R[2]=forceZr;
-			
-			// 	force_F_L[0]=forceXl;
-			// 	force_F_L[1]=forceYl;
-			// 	force_F_L[2]=forceZl;
-			
-			
-			// 	torque_F_R[0]=torquexr;
-			// 	torque_F_R[1]=torqueyr;
-			// 	torque_F_R[2]=torquezr;
-			
-			// 	torque_F_L[0]=torquexl;
-			// 	torque_F_L[1]=torqueyl;
-			// 	torque_F_L[2]=torquezl;
-			// }
-
-			// if(i>(tq_standing/2)+1){
-			// 	ps_sensing_count++;
-			// 	ps_RforceZ_avg +=forceZr;
-			// 	ps_RtorqueX_avg+=torquexr;
-			// 	ps_RtorqueY_avg+=torqueyr;
-			// 	ps_LforceZ_avg +=forceZl;
-			// 	ps_LtorqueX_avg+=torquexl;
-			// 	ps_LtorqueY_avg+=torqueyl;
-			// }
-			// ps_RforceZ_last =forceZr;
-			// ps_RtorqueX_last=torquexr;
-			// ps_RtorqueY_last=torqueyr;
-			// ps_LforceZ_last =forceZl;
-			// ps_LtorqueX_last=torquexl;
-			// ps_LtorqueY_last=torqueyl;
 
 			torqueStandingCount++;
 			loopcount++;
 			ROS_INFO("torque standing loopcount = %d",loopcount);
+#if debugFprintOn
+			for(int i=0; i<12; i++)
+				wpg<<_th[i]<<" ";
+			for(int i=0; i<12; i++)
+				wpg<<curr_joint_pos_[i]<<" ";
+			wpg << std ::setprecision(16)<<time_duration<<" "<<end<<" ";
+			for(int i=0; i<12; i++)
+				wpg<<torque[i]<<" ";
+			for(int i=0; i<12; i++)
+				wpg<<curr_joint_pos_[encoderIdx[i]]<<" ";
+			for(int i=0; i<12; i++)
+				wpg<<des_joint_torque_[encoderIdx[i]]<<" ";
+			wpg << endl;
+#endif
 			if(torqueStandingCount==tq_standing)
 			{
 				_sn=0;
@@ -7406,6 +7165,8 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 			_th_encoder[9] = curr_joint_pos_[joint_name_to_id_["l_knee"] - 1];
 			_th_encoder[10] = -curr_joint_pos_[joint_name_to_id_["l_ank_pitch"] - 1];
 			_th_encoder[11] = curr_joint_pos_[joint_name_to_id_["l_ank_roll"] - 1];
+
+			
 
 #if initPoseCheck
 			if(_sn==0)
@@ -7510,7 +7271,19 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 			_theta_p.x[10][0] = _th_encoder[10];
 			_theta_p.x[11][0] = _th_encoder[11];
 #else
-		forwardkinematics(_th_torque);		
+			_theta_p.x[0][0] = _th_torque[0];
+			_theta_p.x[1][0] = _th_torque[1];
+			_theta_p.x[2][0] = _th_torque[2];
+			_theta_p.x[3][0] = _th_torque[3];
+			_theta_p.x[4][0] = _th_torque[4];
+			_theta_p.x[5][0] = _th_torque[5];
+			_theta_p.x[6][0] = _th_torque[6];
+			_theta_p.x[7][0] = _th_torque[7];
+			_theta_p.x[8][0] = _th_torque[8];
+			_theta_p.x[9][0] = _th_torque[9];
+			_theta_p.x[10][0] = _th_torque[10];
+			_theta_p.x[11][0] = _th_torque[11];
+			forwardkinematics(_th_torque);		
 #endif
 			RR01.x[0][0] = TRB1[0][0];
 			RR01.x[0][1] = TRB1[0][1];
@@ -7855,6 +7628,49 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 			ddq_Jdot_R_p.x[4][5] = 0.0;
 			ddq_Jdot_R_p.x[5][5] = 0.0;
 
+			ddq_Jdot_L_p.x[0][0] = 0.0;
+			ddq_Jdot_L_p.x[1][0] = 0.0;
+			ddq_Jdot_L_p.x[2][0] = 0.0;
+			ddq_Jdot_L_p.x[3][0] = 0.0;
+			ddq_Jdot_L_p.x[4][0] = 0.0;
+			ddq_Jdot_L_p.x[5][0] = 0.0;
+
+			ddq_Jdot_L_p.x[0][1] = 0.0;
+			ddq_Jdot_L_p.x[1][1] = 0.0;
+			ddq_Jdot_L_p.x[2][1] = 0.0;
+			ddq_Jdot_L_p.x[3][1] = 0.0;
+			ddq_Jdot_L_p.x[4][1] = 0.0;
+			ddq_Jdot_L_p.x[5][1] = 0.0;
+
+			ddq_Jdot_L_p.x[0][2] = 0.0;
+			ddq_Jdot_L_p.x[1][2] = 0.0;
+			ddq_Jdot_L_p.x[2][2] = 0.0;
+			ddq_Jdot_L_p.x[3][2] = 0.0;
+			ddq_Jdot_L_p.x[4][2] = 0.0;
+			ddq_Jdot_L_p.x[5][2] = 0.0;
+
+			ddq_Jdot_L_p.x[0][3] = 0.0;
+			ddq_Jdot_L_p.x[1][3] = 0.0;
+			ddq_Jdot_L_p.x[2][3] = 0.0;
+			ddq_Jdot_L_p.x[3][3] = 0.0;
+			ddq_Jdot_L_p.x[4][3] = 0.0;
+			ddq_Jdot_L_p.x[5][3] = 0.0;
+
+
+			ddq_Jdot_L_p.x[0][4] = 0.0;
+			ddq_Jdot_L_p.x[1][4] = 0.0;
+			ddq_Jdot_L_p.x[2][4] = 0.0;
+			ddq_Jdot_L_p.x[3][4] = 0.0;
+			ddq_Jdot_L_p.x[4][4] = 0.0;
+			ddq_Jdot_L_p.x[5][4] = 0.0;
+
+			ddq_Jdot_L_p.x[0][5] = 0.0;
+			ddq_Jdot_L_p.x[1][5] = 0.0;
+			ddq_Jdot_L_p.x[2][5] = 0.0;
+			ddq_Jdot_L_p.x[3][5] = 0.0;
+			ddq_Jdot_L_p.x[4][5] = 0.0;
+			ddq_Jdot_L_p.x[5][5] = 0.0;
+
 			_w_LE_n.x[0][0]=0;
 			_w_LE_n.x[1][0]=0;
 			_w_LE_n.x[2][0]=0;
@@ -7939,6 +7755,7 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 			// // double Tr_ankleRoll=0.01;//0;//0.02;//
 			// // double _kv_ankleRoll=2*(1.8/Tr_ankleRoll);//0;//2*(1.8/Tr);//180;//2*(1.8/Tr);
 			// // double _kp_ankleRoll=(1.8/Tr_ankleRoll)*(1.8/Tr_ankleRoll);//0;//(1.8/Tr)*(1.8/Tr);//8100;//(1.8/Tr)*(1.8/Tr);
+			
 			_error_dth_1=vectorminus121_121(Mdth_d,Mdth);
 			_error_dth=productmatrix121_d(_kv,_error_dth_1);
 			// // _error_dth.x[1][0]=_error_dth.x[1][0]/_kv*_kv_anklePitch;
@@ -8138,88 +7955,88 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 			RNEnl.x[0][6] = nl77;
 
 			// B->R
-				for (k = 0; k < 6; k++) { ///outward iteration
+			for (k = 0; k < 6; k++) { ///outward iteration
 
-					rotationl = invRL.x[k][0]; //3x3
-					omegal = RNEwl.x[0][k]; //3x1
-					productwl = productmatrix33_31(rotationl, omegal);//3x1
+				rotationl = invRL.x[k][0]; //3x3
+				omegal = RNEwl.x[0][k]; //3x1
+				productwl = productmatrix33_31(rotationl, omegal);//3x1
 
-					ta_zl=ta.x[0][k+6];//3x1
-					wl_m2_1=Mdth.x[k+6][0];//double
+				ta_zl=ta.x[0][k+6];//3x1
+				wl_m2_1=Mdth.x[k+6][0];//double
 #if GravityCompensationRNE
-					wl_m2_1=0;
+				wl_m2_1=0;
 #endif
-					wl_m2 = productmatrix11_31(wl_m2_1, ta_zl);//3x1
+				wl_m2 = productmatrix11_31(wl_m2_1, ta_zl);//3x1
 
-					RNEwl.x[0][k + 1] = vectorplus31_31(productwl, wl_m2); // w(i+1)
+				RNEwl.x[0][k + 1] = vectorplus31_31(productwl, wl_m2); // w(i+1)
 
-					domegal = RNEdwl.x[0][k];//3x1
-					productdwl1 = productmatrix33_31(rotationl, domegal);//3x1
+				domegal = RNEdwl.x[0][k];//3x1
+				productdwl1 = productmatrix33_31(rotationl, domegal);//3x1
 
-					cproductdwl1 = crossproductmatrix31_31(productwl, wl_m2);//3x1
+				cproductdwl1 = crossproductmatrix31_31(productwl, wl_m2);//3x1
 
-					ta_zl=ta.x[0][k+6];//3x1
-					dwl_m2_1=Mddth.x[k+6][0];//double
+				ta_zl=ta.x[0][k+6];//3x1
+				dwl_m2_1=Mddth.x[k+6][0];//double
 #if GravityCompensationRNE
-					dwl_m2_1=0;
+				dwl_m2_1=0;
 #endif					
-					dwl_m2 = productmatrix11_31(dwl_m2_1, ta_zl);
+				dwl_m2 = productmatrix11_31(dwl_m2_1, ta_zl);
 
-					RNEdwl.x[0][k + 1] = vectorplus31_31_31(productdwl1, cproductdwl1, dwl_m2);//3x1
+				RNEdwl.x[0][k + 1] = vectorplus31_31_31(productdwl1, cproductdwl1, dwl_m2);//3x1
 
-					vpl1 = crossproductmatrix31_31(domegal, PositionppL.x[0][k]);//3x1
-					vpl2_1 = crossproductmatrix31_31(omegal, PositionppL.x[0][k]);//3x1
-					vpl2 = crossproductmatrix31_31(omegal, vpl2_1);//3x1
-					vpl3 = RNEdvl.x[0][k];//3x1
-					vectorplusdvl1 = vectorplus31_31_31(vpl1, vpl2, vpl3);//3x1
+				vpl1 = crossproductmatrix31_31(domegal, PositionppL.x[0][k]);//3x1
+				vpl2_1 = crossproductmatrix31_31(omegal, PositionppL.x[0][k]);//3x1
+				vpl2 = crossproductmatrix31_31(omegal, vpl2_1);//3x1
+				vpl3 = RNEdvl.x[0][k];//3x1
+				vectorplusdvl1 = vectorplus31_31_31(vpl1, vpl2, vpl3);//3x1
 
-					RNEdvl.x[0][k + 1] = productmatrix33_31(rotationl, vectorplusdvl1);//3x1
+				RNEdvl.x[0][k + 1] = productmatrix33_31(rotationl, vectorplusdvl1);//3x1
 
-					positionCl = PositionC.x[0][k+6];//3x1
-					Rdvcl1 = crossproductmatrix31_31(RNEdwl.x[0][k + 1], positionCl);//3x1
-					Rdvcl2_1 = crossproductmatrix31_31(RNEwl.x[0][k + 1], positionCl);//3x1
-					Rdvcl2 = crossproductmatrix31_31(RNEwl.x[0][k + 1], Rdvcl2_1);//3x1
+				positionCl = PositionC.x[0][k+6];//3x1
+				Rdvcl1 = crossproductmatrix31_31(RNEdwl.x[0][k + 1], positionCl);//3x1
+				Rdvcl2_1 = crossproductmatrix31_31(RNEwl.x[0][k + 1], positionCl);//3x1
+				Rdvcl2 = crossproductmatrix31_31(RNEwl.x[0][k + 1], Rdvcl2_1);//3x1
 
-					RNEdvcl.x[0][k + 1] = vectorplus31_31_31(Rdvcl1, Rdvcl2, RNEdvl.x[0][k + 1]);//3x1
+				RNEdvcl.x[0][k + 1] = vectorplus31_31_31(Rdvcl1, Rdvcl2, RNEdvl.x[0][k + 1]);//3x1
 
-					helpRNEdvcl = RNEdvcl.x[0][k + 1];//3x1
-					helpRNEFl.x[0][0] = RNEmass[k+6] * helpRNEdvcl.x[0][0];//m*dvc
-					helpRNEFl.x[1][0] = RNEmass[k+6] * helpRNEdvcl.x[1][0];
-					helpRNEFl.x[2][0] = RNEmass[k+6] * helpRNEdvcl.x[2][0];
+				helpRNEdvcl = RNEdvcl.x[0][k + 1];//3x1
+				helpRNEFl.x[0][0] = RNEmass[k+6] * helpRNEdvcl.x[0][0];//m*dvc
+				helpRNEFl.x[1][0] = RNEmass[k+6] * helpRNEdvcl.x[1][0];
+				helpRNEFl.x[2][0] = RNEmass[k+6] * helpRNEdvcl.x[2][0];
 
-					RNEFl.x[0][k + 1] = helpRNEFl;//3x1
+				RNEFl.x[0][k + 1] = helpRNEFl;//3x1
 
-					RNENl_1_1 = Inertia.x[0][k+6];//3x3
-					RNENl_1 = productmatrix33_31(RNENl_1_1, RNEdwl.x[0][k + 1]);//3x1
-					RNENl_2 = productmatrix33_31(RNENl_1_1, RNEwl.x[0][k + 1]);//3x1
-					RNENl_3 = crossproductmatrix31_31(RNEwl.x[0][k + 1], RNENl_2);//3x1
+				RNENl_1_1 = Inertia.x[0][k+6];//3x3
+				RNENl_1 = productmatrix33_31(RNENl_1_1, RNEdwl.x[0][k + 1]);//3x1
+				RNENl_2 = productmatrix33_31(RNENl_1_1, RNEwl.x[0][k + 1]);//3x1
+				RNENl_3 = crossproductmatrix31_31(RNEwl.x[0][k + 1], RNENl_2);//3x1
 
-					RNENl.x[0][k + 1] = vectorplus31_31(RNENl_1, RNENl_3);//3x1
-				}
+				RNENl.x[0][k + 1] = vectorplus31_31(RNENl_1, RNENl_3);//3x1
+			}
 
-				for (k = 6; k > 0; k = k - 1) {  ///inward iteration
+			for (k = 6; k > 0; k = k - 1) {  ///inward iteration
 
-					RNEfl_1 = productmatrix33_31(RL.x[k][0], RNEfl.x[0][k]);//3x1
-					RNEfl.x[0][k - 1] = vectorplus31_31(RNEfl_1, RNEFl.x[0][k]);//3x1
+				RNEfl_1 = productmatrix33_31(RL.x[k][0], RNEfl.x[0][k]);//3x1
+				RNEfl.x[0][k - 1] = vectorplus31_31(RNEfl_1, RNEFl.x[0][k]);//3x1
 
-					inwardpositionCl = PositionC.x[0][k+5];//3x1
-					RNEnl_1 = productmatrix33_31(RL.x[k][0], RNEnl.x[0][k]);//3x1
-					RNEnl_2 = crossproductmatrix31_31(inwardpositionCl, RNEFl.x[0][k]);//3x1
-					RNEnl_3 = crossproductmatrix31_31(PositionppL.x[0][k], RNEfl_1);//3x1
+				inwardpositionCl = PositionC.x[0][k+5];//3x1
+				RNEnl_1 = productmatrix33_31(RL.x[k][0], RNEnl.x[0][k]);//3x1
+				RNEnl_2 = crossproductmatrix31_31(inwardpositionCl, RNEFl.x[0][k]);//3x1
+				RNEnl_3 = crossproductmatrix31_31(PositionppL.x[0][k], RNEfl_1);//3x1
 
-					RNEnl.x[0][k - 1] = vectorplus31_31_31_31(RNENl.x[0][k], RNEnl_1, RNEnl_2, RNEnl_3);//3x1
+				RNEnl.x[0][k - 1] = vectorplus31_31_31_31(RNENl.x[0][k], RNEnl_1, RNEnl_2, RNEnl_3);//3x1
 
 				/*
 				helpFinaltorque = RNEn.x[0][i - 1];//n(i)-1
 				Finaltorque.x[6-i][0] = productmatrix11_31(helpFinaltorque_1,ta_z);
 				*/
 
-					helpFinaltorquel = RNEnl.x[0][k - 1];//3x1
-					helpFinaltorquel_1= transposeMatrix_31(helpFinaltorquel);//1x3
-					ta_zl_1 = ta.x[0][k+5];//3x1
-					Finaltorque.x[k+5][0] = productmatrix13_31(helpFinaltorquel_1,ta_zl_1);//double
-					// printf("Finaltorque.x[%d][0]=%lf",k+5,Finaltorque.x[k+5][0]);
-				}
+				helpFinaltorquel = RNEnl.x[0][k - 1];//3x1
+				helpFinaltorquel_1= transposeMatrix_31(helpFinaltorquel);//1x3
+				ta_zl_1 = ta.x[0][k+5];//3x1
+				Finaltorque.x[k+5][0] = productmatrix13_31(helpFinaltorquel_1,ta_zl_1);//double
+				// printf("Finaltorque.x[%d][0]=%lf",k+5,Finaltorque.x[k+5][0]);
+			}
 
 			torque1 = Finaltorque.x[0][0];
 			torque2 = Finaltorque.x[1][0];
@@ -8242,18 +8059,19 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 			// printf("\nhippitch   /des :R=%6lf ,L=%6lf /enc:R=%6lf ,L=%6lf /errth:R=%6lf ,L=%6lf /errdth:R=%6lf ,L=%6lf /torque:R=%6lf ,L=%6lf",_th_torque[3]*180/pi, _th_torque[8]*180/pi,_th_encoder[3]*180/pi,_th_encoder[8]*180/pi,_error_th_1.x[3][0],_error_th_1.x[8][0],_error_dth_1.x[3][0],_error_dth_1.x[8][0],torque[3],torque[8]);
 			// printf("\nhiproll    /des :R=%6lf ,L=%6lf /enc:R=%6lf ,L=%6lf /errth:R=%6lf ,L=%6lf /errdth:R=%6lf ,L=%6lf /torque:R=%6lf ,-L=%6lf",_th_torque[4]*180/pi, _th_torque[7]*180/pi,_th_encoder[4]*180/pi,_th_encoder[7]*180/pi,_error_th_1.x[4][0],_error_th_1.x[7][0],_error_dth_1.x[4][0],_error_dth_1.x[7][0],torque[4],-torque[7]);
 			// printf("\nhipyaw     /des :R=%6lf ,L=%6lf /enc:R=%6lf ,L=%6lf /errth:R=%6lf ,L=%6lf /errdth:R=%6lf ,L=%6lf /torque:R=%6lf ,-L=%6lf",_th_torque[5]*180/pi, _th_torque[6]*180/pi,_th_encoder[5]*180/pi,_th_encoder[6]*180/pi,_error_th_1.x[5][0],_error_th_1.x[6][0],_error_dth_1.x[5][0],_error_dth_1.x[6][0],torque[5],-torque[6]);
-			
+
 			if(loopcount%10==0)
 			{
-				printf("th_d[0]=%lf, th_d[1]=%lf,th_d[2]=%lf,th_d[3]=%lf,th_d[4]=%lf,th_d[5]=%lf,th_d[6]=%lf,th_d[7]=%lf,th_d[8]=%lf,th_d[9]=%lf,th_d[10]=%lf,th_d[11]=%lf",
-				_th_torque[0],_th_torque[1],_th_torque[2],_th_torque[3],_th_torque[4],_th_torque[5],
-				_th_torque[6],_th_torque[7],_th_torque[8],_th_torque[9],_th_torque[10],_th_torque[11]);
-				printf("\n-torque[0]= %lf,-torque[1]= %lf,torque[2]= %lf,torque[3]= %lf, torque[4]= %lf,torque[5]= %lf",
-				-torque[0],-torque[1],torque[2],torque[3],torque[4],torque[5]);
-				printf("\ntorque[11]= %lf,-torque[10]= %lf,torque[9]= %lf, torque[8]= %lf,-torque[7]= %lf,-torque[6]= %lf",
-				torque[11],-torque[10],torque[9],torque[8],-torque[7],-torque[6]);
-				printf("torque stand loopcount = %d",loopcount);
+				// printf("th_d[0]=%lf, th_d[1]=%lf,th_d[2]=%lf,th_d[3]=%lf,th_d[4]=%lf,th_d[5]=%lf,th_d[6]=%lf,th_d[7]=%lf,th_d[8]=%lf,th_d[9]=%lf,th_d[10]=%lf,th_d[11]=%lf",
+				// _th_torque[0],_th_torque[1],_th_torque[2],_th_torque[3],_th_torque[4],_th_torque[5],
+				// _th_torque[6],_th_torque[7],_th_torque[8],_th_torque[9],_th_torque[10],_th_torque[11]);
+				// printf("\n-torque[0]= %lf,-torque[1]= %lf,torque[2]= %lf,torque[3]= %lf, torque[4]= %lf,torque[5]= %lf",
+				// -torque[0],-torque[1],torque[2],torque[3],torque[4],torque[5]);
+				// printf("\ntorque[11]= %lf,-torque[10]= %lf,torque[9]= %lf, torque[8]= %lf,-torque[7]= %lf,-torque[6]= %lf",
+				// torque[11],-torque[10],torque[9],torque[8],-torque[7],-torque[6]);
+				printf("torque stand loopcount = %d\n",loopcount);
 			}
+#if debugPrintOn			
 			// printf("torque[9]L Knee pitch=%lf\n",torque[9]);
 			// printf("curr_joint_pos_[l_knee]=%lf",curr_joint_pos_[joint_name_to_id_["l_knee"]-1]);
 			// printf("\n");
@@ -8262,7 +8080,7 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 			// -torque[0],-torque[1],torque[2],torque[3],torque[4],torque[5]);
 			// printf("\ntorque[11]= %lf,-torque[10]= %lf,torque[9]= %lf, torque[8]= %lf,-torque[7]= %lf,-torque[6]= %lf",
 			// torque[11],-torque[10],torque[9],torque[8],-torque[7],-torque[6]);
-
+#endif
 			// des_joint_torque_[joint_name_to_id_["r_hip_yaw"]-1]      = 0;//torque[5];//_th[5]//encoder[0]
 			// des_joint_torque_[joint_name_to_id_["r_hip_roll"]-1]     = 0;//torque[4];//_th[4]//encoder[2]
 			// des_joint_torque_[joint_name_to_id_["r_hip_pitch"]-1]    = 0;//torque[3];//_th[3]//encoder[4]
@@ -8273,7 +8091,7 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 			// des_joint_torque_[joint_name_to_id_["l_hip_yaw"]-1]      = 0;//-torque[6];
 			// des_joint_torque_[joint_name_to_id_["l_hip_roll"]-1]     = 0;//-torque[7];
 			// des_joint_torque_[joint_name_to_id_["l_hip_pitch"]-1]    = 0;//torque[8]/149.795*227.509;//-0.4;//
-			// des_joint_torque_[joint_name_to_id_["l_knee"]-1]         = torque[9]/149.795*227.509;//0;//
+			// des_joint_torque_[joint_name_to_id_["l_knee"]-1]         = 0;//0;//
 			// des_joint_torque_[joint_name_to_id_["l_ank_pitch"]-1]    = 0;//-torque[10];
 			// des_joint_torque_[joint_name_to_id_["l_ank_roll"]-1]     = 0;//torque[11];
 
@@ -8292,7 +8110,8 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 			des_joint_torque_[joint_name_to_id_["l_ank_roll"]-1]     = torque[11]/149.795*227.509;
 
 #if torqueModeOn
-			jointTorqueLimitCheck(0.5);
+			// jointTorqueLimitCheck(0.5);
+			jointTorqueDegreeLimitCheck(loopcount);
 #endif
 
 			torqueStandCount++;
@@ -8304,7 +8123,14 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 				wpg<<_th[i]<<" ";
 			for(int i=0; i<12; i++)
 				wpg<<curr_joint_pos_[i]<<" ";
-			wpg<<endl;
+			wpg << std ::setprecision(16)<<time_duration<<" "<<end<<" ";
+			for(int i=0; i<12; i++)
+				wpg<<torque[i]<<" ";
+			for(int i=0; i<12; i++)
+				wpg<<curr_joint_pos_[encoderIdx[i]]<<" ";
+			for(int i=0; i<12; i++)
+				wpg<<des_joint_torque_[encoderIdx[i]]<<" ";
+			wpg << endl;
 #endif
 			if(torqueStandCount==tq_standing)
 			{
@@ -8312,10 +8138,13 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 				torqueStandCount++;
 			}
 		}
-		else //(loopcount >= tq_stand)&& (loopcount>=tq_standing) WPG
+		else //(loopcount >= tq_stand+tq_standing) WPG
 		{
+			if(_sn=0)
+			{
+				loopcount=tq_stand+tq_standing;
+			}
 			double _dds= 0.1257;
-			//while (1) {
 			if (phase == DSP_R || phase == DSP_L) {
 				phaseflag = 1;
 			}
@@ -8323,19 +8152,18 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 				phaseflag = 0;
 			}
 			
-
-			i_th_encoder[0]  = -curr_joint_pos_[0];
-			i_th_encoder[1]  = -curr_joint_pos_[1];
-			i_th_encoder[2]  = curr_joint_pos_[2];
-			i_th_encoder[3]  = curr_joint_pos_[3];
-			i_th_encoder[4]  = curr_joint_pos_[4];
-			i_th_encoder[5]  = curr_joint_pos_[5];
-			i_th_encoder[6]  = -curr_joint_pos_[6];
-			i_th_encoder[7]  = -curr_joint_pos_[7];
-			i_th_encoder[8]  = curr_joint_pos_[8];
-			i_th_encoder[9]  = curr_joint_pos_[9];
-			i_th_encoder[10] = -curr_joint_pos_[10];
-			i_th_encoder[11] = curr_joint_pos_[11];
+			i_th_encoder[0]  = -curr_joint_pos_[joint_name_to_id_["r_ank_roll"] - 1];
+			i_th_encoder[1]  = -curr_joint_pos_[joint_name_to_id_["r_ank_pitch"] - 1];
+			i_th_encoder[2]  = curr_joint_pos_[joint_name_to_id_["r_knee"] - 1];
+			i_th_encoder[3]  = curr_joint_pos_[joint_name_to_id_["r_hip_pitch"] - 1];
+			i_th_encoder[4]  = curr_joint_pos_[joint_name_to_id_["r_hip_roll"] - 1];
+			i_th_encoder[5]  = curr_joint_pos_[joint_name_to_id_["r_hip_yaw"] - 1];
+			i_th_encoder[6]  = -curr_joint_pos_[joint_name_to_id_["l_hip_yaw"] - 1];
+			i_th_encoder[7]  = -curr_joint_pos_[joint_name_to_id_["l_hip_roll"] - 1];
+			i_th_encoder[8]  = curr_joint_pos_[joint_name_to_id_["l_hip_pitch"] - 1];
+			i_th_encoder[9]  = curr_joint_pos_[joint_name_to_id_["l_knee"] - 1];
+			i_th_encoder[10] =  -curr_joint_pos_[joint_name_to_id_["l_ank_pitch"] - 1];
+			i_th_encoder[11] =  curr_joint_pos_[joint_name_to_id_["l_ank_roll"] - 1];
 
 			j_th_encoder[0] = i_th_encoder[0];
 			j_th_encoder[1] = i_th_encoder[1];
@@ -8354,18 +8182,18 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 			
 			if (_sn == 0)
 			{
-				i_th_current_p.x[0][0] = _th_position[0];
-				i_th_current_p.x[1][0] = _th_position[1];
-				i_th_current_p.x[2][0] = _th_position[2];
-				i_th_current_p.x[3][0] = _th_position[3];
-				i_th_current_p.x[4][0] = _th_position[4];
-				i_th_current_p.x[5][0] = _th_position[5];
-				i_th_current_p.x[6][0] = _th_position[6];
-				i_th_current_p.x[7][0] = _th_position[7];
-				i_th_current_p.x[8][0] = _th_position[8];
-				i_th_current_p.x[9][0] = _th_position[9];
-				i_th_current_p.x[10][0] = _th_position[10];
-				i_th_current_p.x[11][0] = _th_position[11];
+				i_th_current_p.x[0][0] = _th_torque[0];
+				i_th_current_p.x[1][0] = _th_torque[1];
+				i_th_current_p.x[2][0] = _th_torque[2];
+				i_th_current_p.x[3][0] = _th_torque[3];
+				i_th_current_p.x[4][0] = _th_torque[4];
+				i_th_current_p.x[5][0] = _th_torque[5];
+				i_th_current_p.x[6][0] = _th_torque[6];
+				i_th_current_p.x[7][0] = _th_torque[7];
+				i_th_current_p.x[8][0] = _th_torque[8];
+				i_th_current_p.x[9][0] = _th_torque[9];
+				i_th_current_p.x[10][0] = _th_torque[10];
+				i_th_current_p.x[11][0] = _th_torque[11];
 			}
 
 			else {
@@ -8386,830 +8214,776 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 
 			iMdth = s_vectorminus121_121(i_th_current_n, i_th_current_p);
     		
-		if (_s[_i][6] == 0 && _s[_i][5] + samplingtime / 2 < _t) {
-			// printf("------------------------------------------------------------------------\n");
-			// printf("------------------------------WALKING SET-------------------------------\n");
-			// printf("------------------------------------------------------------------------\n");
-			
-			rot_th = rot_th + _s[_i - 1][4];//0
-			_C = cosh(_s[_i + 1][2] / _Tc);
-			_S = sinh(_s[_i + 1][2] / _Tc);
-			_ppx = _px;
-			_ppy = _py;
-			_pvx_ter = _vx_ter;
-			_pvy_ter = _vy_ter;
-			_px = _px + cos(rot_th) * _s[_i][0] + sin(rot_th) * pow(-1.0, _i + 1.0) * _s[_i][1];
-			_py = _py + sin(rot_th) * _s[_i][0] - cos(rot_th) * pow(-1.0, _i + 1.0) * _s[_i][1];
-			_x_rot = cos(rot_th) * _s[_i][0] *sspf_coeff/2 - sin(rot_th) * pow(-1.0, _i) * _s[_i][1] * sspf_coeff/2;
-			_y_rot = -sin(rot_th) * _s[_i][0] * sspf_coeff/2 + cos(rot_th) * pow(-1.0, _i + 1.0) * _s[_i][1] * sspf_coeff/2;
-			_x_ter = cos(rot_th) * _x_rot - sin(rot_th) * _y_rot;
-			_y_ter = sin(rot_th) * _x_rot + cos(rot_th) * _y_rot;
-			if(onlySSPon==1)
-			{
-				_x_ter = cos(rot_th) * _x_rot - sin(rot_th) * _y_rot+pre_xcom_c;
-				_y_ter = sin(rot_th) * _x_rot + cos(rot_th) * _y_rot+pre_ycom_c;
-      		}
-			if(_i>2){
-				_xcom_CPT=-_px+_xcom_CPT_global;
-				_ycom_CPT=-_py+_ycom_CPT_global;
-				// _xcom_CPT_v=-_xcom_CPT_v;
-				// _ycom_CPT_v=-_ycom_CPT_v;
-			}
-			
-
-			if (_i == 2) {
-				_y_ter = -L3 * (1 - dspf_coeff);
+			if (_s[_i][6] == 0 && _s[_i][5] + samplingtime / 2 < _t) {
+				// printf("------------------------------------------------------------------------\n");
+				// printf("------------------------------WALKING SET-------------------------------\n");
+				// printf("------------------------------------------------------------------------\n");
+				
+				rot_th = rot_th + _s[_i - 1][4];//0
+				_C = cosh(_s[_i + 1][2] / _Tc);
+				_S = sinh(_s[_i + 1][2] / _Tc);
+				_ppx = _px;
+				_ppy = _py;
+				_pvx_ter = _vx_ter;
+				_pvy_ter = _vy_ter;
+				_px = _px + cos(rot_th) * _s[_i][0] + sin(rot_th) * pow(-1.0, _i + 1.0) * _s[_i][1];
+				_py = _py + sin(rot_th) * _s[_i][0] - cos(rot_th) * pow(-1.0, _i + 1.0) * _s[_i][1];
+				_x_rot = cos(rot_th) * _s[_i][0] *sspf_coeff/2 - sin(rot_th) * pow(-1.0, _i) * _s[_i][1] * sspf_coeff/2;
+				_y_rot = -sin(rot_th) * _s[_i][0] * sspf_coeff/2 + cos(rot_th) * pow(-1.0, _i + 1.0) * _s[_i][1] * sspf_coeff/2;
+				_x_ter = cos(rot_th) * _x_rot - sin(rot_th) * _y_rot;
+				_y_ter = sin(rot_th) * _x_rot + cos(rot_th) * _y_rot;
 				if(onlySSPon==1)
 				{
-					_y_ter = -L3;//only ssp
+					_x_ter = cos(rot_th) * _x_rot - sin(rot_th) * _y_rot+pre_xcom_c;
+					_y_ter = sin(rot_th) * _x_rot + cos(rot_th) * _y_rot+pre_ycom_c;
 				}
+				if(_i>2){
+					_xcom_CPT=-_px+_xcom_CPT_global;
+					_ycom_CPT=-_py+_ycom_CPT_global;
+					// _xcom_CPT_v=-_xcom_CPT_v;
+					// _ycom_CPT_v=-_ycom_CPT_v;
+				}
+				
+
+				if (_i == 2) {
+					_y_ter = -L3 * (1 - dspf_coeff);
+					if(onlySSPon==1)
+					{
+						_y_ter = -L3;//only ssp
+					}
+				}
+
+				_x_rotf = cos(rot_th + _s[_i][4]) * _s[_i + 1][0] * sspf_coeff/2 - sin(rot_th + _s[_i][4]) * pow(-1.0, _i + 1.0) * _s[_i + 1][1] * sspf_coeff/2;
+				_y_rotf = sin(rot_th + _s[_i][4]) * _s[_i + 1][0] * sspf_coeff/2 + cos(rot_th + _s[_i][4]) * pow(-1.0, _i + 1.0) * _s[_i + 1][1] * sspf_coeff/2;
+
+				if (_i == _step_length && _i % 2 == 1) {
+					_x_rotf = -sin(rot_th)*L3 * sspf_coeff/2;
+					_y_rotf = cos(rot_th) * L3 * sspf_coeff/2;
+				}
+				else if (_i == _step_length && _i % 2 == 0) {
+					_x_rotf = sin(rot_th) * L3 * sspf_coeff/2;
+					_y_rotf = -cos(rot_th) * L3 * sspf_coeff/2;
+				}
+
+				_x_terf = cos(-rot_th) * _x_rotf - sin(-rot_th) * _y_rotf;
+				_y_terf = sin(-rot_th) * _x_rotf + cos(-rot_th) * _y_rotf;
+
+				_vx_ter = (_C * _x_ter + _x_terf) / (_Tc * _S);
+				_vy_ter = (_C * _y_ter - _y_terf) / (_Tc * _S);
+				_s[_i][6] = 1;
+				_theta = 0;
+				_swingtime = 2 * pi / (int)(_s[_i + 1][2] / samplingtime);
+				
+				dsp_x_i = cos(rot_th) * _s[_i][0] * sspf_coeff/2 - sin(rot_th) * pow(-1.0, _i)* _s[_i][1] * sspf_coeff/2 + _ppx;
+				dsp_x_f = cos(rot_th) * _s[_i][0] * (sspf_coeff/2+dspf_coeff) - sin(rot_th) * pow(-1.0, _i) * _s[_i][1] * (sspf_coeff/2+dspf_coeff) + _ppx;
+				dsp_dx_i = cos(-rot_th) * _vx_ter - sin(-rot_th) * _vy_ter;
+				dsp_dx_f = cos(-rot_th) * _vx_ter - sin(-rot_th) * _vy_ter;
+				dsp_y_i = sin(rot_th) * _s[_i][0] * sspf_coeff/2 + cos(rot_th) * pow(-1.0, _i) * _s[_i][1] * sspf_coeff/2 + _ppy;
+				dsp_y_f = sin(rot_th) * _s[_i][0] * (sspf_coeff/2+dspf_coeff) + cos(rot_th) * pow(-1.0, _i) * _s[_i][1] * (sspf_coeff/2+dspf_coeff) + _ppy;
+				dsp_dy_i = -sin(-rot_th) * _vx_ter - cos(-rot_th) * _vy_ter;
+				dsp_dy_f = -sin(-rot_th) * _vx_ter - cos(-rot_th) * _vy_ter;
+				// printf("\nI>2CPSwitch&&dspinitswitch==1\ndsp_x_i_c = %lf dsp_dx_i_c = %lf dsp_y_i_c = %lf  dsp_dy_i_c = %lf GLOBAL dsp_x_i_c = %lf GLOBAL dsp_y_i_c = %lf\n",dsp_x_i_c, dsp_dx_i_c, dsp_y_i_c, dsp_dy_i_c,dspXICGlobal,dspYICGlobal);
+				// printf("\n dsp_x_i=%lf,dsp_x_f=%lf,dsp_dx_i=%lf,dsp_dx_f=%lf",dsp_x_i,dsp_x_f,dsp_dx_i,dsp_dx_f);
+				// printf("\n dsp_y_i=%lf,dsp_y_f=%lf,dsp_dy_i=%lf,dsp_dy_f=%lf",dsp_y_i,dsp_y_f,dsp_dy_i,dsp_dy_f);
+				
+				dsp_x_i_nominal = cos(rot_th) * _s[_i][0] * sspf_coeff/2 - sin(rot_th) * pow(-1.0, _i)* _s[_i][1] * sspf_coeff/2 + _ppx;
+				dsp_x_f_nominal = cos(rot_th) * _s[_i][0] * (sspf_coeff/2+dspf_coeff) - sin(rot_th) * pow(-1.0, _i) * _s[_i][1] * (sspf_coeff/2+dspf_coeff) + _ppx;
+				dsp_dx_i_nominal = cos(-rot_th) * _vx_ter - sin(-rot_th) * _vy_ter;
+				dsp_dx_f_nominal = cos(-rot_th) * _vx_ter - sin(-rot_th) * _vy_ter;
+				dsp_y_i_nominal = sin(rot_th) * _s[_i][0] * sspf_coeff/2 + cos(rot_th) * pow(-1.0, _i) * _s[_i][1] * sspf_coeff/2 + _ppy;
+				dsp_y_f_nominal = sin(rot_th) * _s[_i][0] * (sspf_coeff/2+dspf_coeff) + cos(rot_th) * pow(-1.0, _i) * _s[_i][1] * (sspf_coeff/2+dspf_coeff) + _ppy;
+				dsp_dy_i_nominal = -sin(-rot_th) * _vx_ter - cos(-rot_th) * _vy_ter;
+				dsp_dy_f_nominal = -sin(-rot_th) * _vx_ter - cos(-rot_th) * _vy_ter;
+				
+				if (_i == 2) {
+					dsp_y_i = L3;
+					dsp_y_i_nominal=L3;
+					// dsp_y_i=0;
+					dsp_y_f = L3 + L3 * dspf_coeff;
+					dsp_y_f_nominal=L3 + L3 * dspf_coeff;
+					// dsp_y_f = L3;
+				}
+
+				if(CpSwitch==0 && dspDecelerator ==1 && (_i>(dspDeceleratorOn-2))){
+					dsp_dx_i=dsp_dx_i/dspConstant;
+					dsp_dx_f=dsp_dx_f/dspConstant;
+					dsp_dy_i=dsp_dy_i/dspConstant;
+					dsp_dy_f=dsp_dy_f/dspConstant;
+					// printf("%d, dspDeceleratoron###############################\n##########################################",_i);
+				}
+				
+				dsp_x_a0 = dsp_x_i;
+				dsp_x_a1 = dsp_dx_i;
+				dsp_x_a2 = 3 / pow(_s[_i + 1][3], 2) * (dsp_x_f - dsp_x_i) - 2 / _s[_i + 1][3] * dsp_dx_i - dsp_dx_f / _s[_i + 1][3];
+				dsp_x_a3 = -2 / pow(_s[_i + 1][3], 3) * (dsp_x_f - dsp_x_i) + 1 / pow(_s[_i + 1][3], 2) * (dsp_dx_f + dsp_dx_i);
+				
+				dsp_x_a0_nominal = dsp_x_i_nominal;
+				dsp_x_a1_nominal = dsp_dx_i_nominal;
+				dsp_x_a2_nominal = 3 / pow(_s[_i + 1][3], 2) * (dsp_x_f_nominal - dsp_x_i_nominal) - 2 / _s[_i + 1][3] * dsp_dx_i_nominal - dsp_dx_f_nominal / _s[_i + 1][3];
+				dsp_x_a3_nominal = -2 / pow(_s[_i + 1][3], 3) * (dsp_x_f_nominal - dsp_x_i_nominal) + 1 / pow(_s[_i + 1][3], 2) * (dsp_dx_f_nominal + dsp_dx_i_nominal);
+				
+				ndsp_x_a0=dsp_x_i;
+				ndsp_x_a1=dsp_dx_i;
+				ndsp_x_a2=0;
+				ndsp_x_a3=(20*(dsp_x_f - dsp_x_i)-(8*dsp_dx_f+12*dsp_dx_i)* _s[_i + 1][3])/(2*pow(_s[_i + 1][3], 3));
+				ndsp_x_a4=(30*(dsp_x_i - dsp_x_f)+(14*dsp_dx_f+16*dsp_dx_i)*_s[_i + 1][3])/(2*pow(_s[_i + 1][3], 4));
+				ndsp_x_a5=(12*(dsp_x_f - dsp_x_i)-(6*dsp_dx_f+6*dsp_dx_i)*_s[_i + 1][3])/(2*pow(_s[_i + 1][3], 5));
+				
+				dsp_y_a0 = dsp_y_i;
+				dsp_y_a1 = dsp_dy_i;
+				dsp_y_a2 = 3 / pow(_s[_i + 1][3], 2) * (dsp_y_f - dsp_y_i) - 2 / _s[_i + 1][3] * dsp_dy_i - dsp_dy_f / _s[_i + 1][3];
+				dsp_y_a3 = -2 / pow(_s[_i + 1][3], 3) * (dsp_y_f - dsp_y_i) + 1 / pow(_s[_i + 1][3], 2) * (dsp_dy_f + dsp_dy_i);
+				
+				dsp_y_a0_nominal = dsp_y_i_nominal;
+				dsp_y_a1_nominal = dsp_dy_i_nominal;
+				dsp_y_a2_nominal = 3 / pow(_s[_i + 1][3], 2) * (dsp_y_f_nominal - dsp_y_i_nominal) - 2 / _s[_i + 1][3] * dsp_dy_i_nominal - dsp_dy_f_nominal / _s[_i + 1][3];
+				dsp_y_a3_nominal = -2 / pow(_s[_i + 1][3], 3) * (dsp_y_f_nominal - dsp_y_i_nominal) + 1 / pow(_s[_i + 1][3], 2) * (dsp_dy_f_nominal + dsp_dy_i_nominal);
+				
+				_swingrot_time = (_s[_i + 1][4] + _s[_i][4]) / (int)(_s[_i + 1][2] / samplingtime);
+
+				_baserot_time = _s[_i][4] / (int)(_s[_i + 1][2] / samplingtime);
+
+				_i = _i + 1;
 			}
 
-			_x_rotf = cos(rot_th + _s[_i][4]) * _s[_i + 1][0] * sspf_coeff/2 - sin(rot_th + _s[_i][4]) * pow(-1.0, _i + 1.0) * _s[_i + 1][1] * sspf_coeff/2;
-			_y_rotf = sin(rot_th + _s[_i][4]) * _s[_i + 1][0] * sspf_coeff/2 + cos(rot_th + _s[_i][4]) * pow(-1.0, _i + 1.0) * _s[_i + 1][1] * sspf_coeff/2;
-
-			if (_i == _step_length && _i % 2 == 1) {
-				_x_rotf = -sin(rot_th)*L3 * sspf_coeff/2;
-				_y_rotf = cos(rot_th) * L3 * sspf_coeff/2;
-			}
-			else if (_i == _step_length && _i % 2 == 0) {
-				_x_rotf = sin(rot_th) * L3 * sspf_coeff/2;
-				_y_rotf = -cos(rot_th) * L3 * sspf_coeff/2;
-			}
-
-			_x_terf = cos(-rot_th) * _x_rotf - sin(-rot_th) * _y_rotf;
-			_y_terf = sin(-rot_th) * _x_rotf + cos(-rot_th) * _y_rotf;
-
-			_vx_ter = (_C * _x_ter + _x_terf) / (_Tc * _S);
-			_vy_ter = (_C * _y_ter - _y_terf) / (_Tc * _S);
-			_s[_i][6] = 1;
-			_theta = 0;
-			_swingtime = 2 * pi / (int)(_s[_i + 1][2] / samplingtime);
-			
-            dsp_x_i = cos(rot_th) * _s[_i][0] * sspf_coeff/2 - sin(rot_th) * pow(-1.0, _i)* _s[_i][1] * sspf_coeff/2 + _ppx;
-			dsp_x_f = cos(rot_th) * _s[_i][0] * (sspf_coeff/2+dspf_coeff) - sin(rot_th) * pow(-1.0, _i) * _s[_i][1] * (sspf_coeff/2+dspf_coeff) + _ppx;
-			dsp_dx_i = cos(-rot_th) * _vx_ter - sin(-rot_th) * _vy_ter;
-			dsp_dx_f = cos(-rot_th) * _vx_ter - sin(-rot_th) * _vy_ter;
-			dsp_y_i = sin(rot_th) * _s[_i][0] * sspf_coeff/2 + cos(rot_th) * pow(-1.0, _i) * _s[_i][1] * sspf_coeff/2 + _ppy;
-			dsp_y_f = sin(rot_th) * _s[_i][0] * (sspf_coeff/2+dspf_coeff) + cos(rot_th) * pow(-1.0, _i) * _s[_i][1] * (sspf_coeff/2+dspf_coeff) + _ppy;
-			dsp_dy_i = -sin(-rot_th) * _vx_ter - cos(-rot_th) * _vy_ter;
-			dsp_dy_f = -sin(-rot_th) * _vx_ter - cos(-rot_th) * _vy_ter;
-			// printf("\nI>2CPSwitch&&dspinitswitch==1\ndsp_x_i_c = %lf dsp_dx_i_c = %lf dsp_y_i_c = %lf  dsp_dy_i_c = %lf GLOBAL dsp_x_i_c = %lf GLOBAL dsp_y_i_c = %lf\n",dsp_x_i_c, dsp_dx_i_c, dsp_y_i_c, dsp_dy_i_c,dspXICGlobal,dspYICGlobal);
-			// printf("\n dsp_x_i=%lf,dsp_x_f=%lf,dsp_dx_i=%lf,dsp_dx_f=%lf",dsp_x_i,dsp_x_f,dsp_dx_i,dsp_dx_f);
-			// printf("\n dsp_y_i=%lf,dsp_y_f=%lf,dsp_dy_i=%lf,dsp_dy_f=%lf",dsp_y_i,dsp_y_f,dsp_dy_i,dsp_dy_f);
-			
-			dsp_x_i_nominal = cos(rot_th) * _s[_i][0] * sspf_coeff/2 - sin(rot_th) * pow(-1.0, _i)* _s[_i][1] * sspf_coeff/2 + _ppx;
-			dsp_x_f_nominal = cos(rot_th) * _s[_i][0] * (sspf_coeff/2+dspf_coeff) - sin(rot_th) * pow(-1.0, _i) * _s[_i][1] * (sspf_coeff/2+dspf_coeff) + _ppx;
-			dsp_dx_i_nominal = cos(-rot_th) * _vx_ter - sin(-rot_th) * _vy_ter;
-			dsp_dx_f_nominal = cos(-rot_th) * _vx_ter - sin(-rot_th) * _vy_ter;
-			dsp_y_i_nominal = sin(rot_th) * _s[_i][0] * sspf_coeff/2 + cos(rot_th) * pow(-1.0, _i) * _s[_i][1] * sspf_coeff/2 + _ppy;
-			dsp_y_f_nominal = sin(rot_th) * _s[_i][0] * (sspf_coeff/2+dspf_coeff) + cos(rot_th) * pow(-1.0, _i) * _s[_i][1] * (sspf_coeff/2+dspf_coeff) + _ppy;
-			dsp_dy_i_nominal = -sin(-rot_th) * _vx_ter - cos(-rot_th) * _vy_ter;
-			dsp_dy_f_nominal = -sin(-rot_th) * _vx_ter - cos(-rot_th) * _vy_ter;
-			
-			
-
-			if (_i == 2) {
-				dsp_y_i = L3;
-				dsp_y_i_nominal=L3;
-				// dsp_y_i=0;
-				dsp_y_f = L3 + L3 * dspf_coeff;
-				dsp_y_f_nominal=L3 + L3 * dspf_coeff;
-				// dsp_y_f = L3;
-			}
-
-			if(CpSwitch==0 && dspDecelerator ==1 && (_i>(dspDeceleratorOn-2))){
-				dsp_dx_i=dsp_dx_i/dspConstant;
-            	dsp_dx_f=dsp_dx_f/dspConstant;
-				dsp_dy_i=dsp_dy_i/dspConstant;
-				dsp_dy_f=dsp_dy_f/dspConstant;
-				// printf("%d, dspDeceleratoron###############################\n##########################################",_i);
-			}
-			
-			dsp_x_a0 = dsp_x_i;
-			dsp_x_a1 = dsp_dx_i;
-			dsp_x_a2 = 3 / pow(_s[_i + 1][3], 2) * (dsp_x_f - dsp_x_i) - 2 / _s[_i + 1][3] * dsp_dx_i - dsp_dx_f / _s[_i + 1][3];
-			dsp_x_a3 = -2 / pow(_s[_i + 1][3], 3) * (dsp_x_f - dsp_x_i) + 1 / pow(_s[_i + 1][3], 2) * (dsp_dx_f + dsp_dx_i);
-            
-			dsp_x_a0_nominal = dsp_x_i_nominal;
-			dsp_x_a1_nominal = dsp_dx_i_nominal;
-			dsp_x_a2_nominal = 3 / pow(_s[_i + 1][3], 2) * (dsp_x_f_nominal - dsp_x_i_nominal) - 2 / _s[_i + 1][3] * dsp_dx_i_nominal - dsp_dx_f_nominal / _s[_i + 1][3];
-			dsp_x_a3_nominal = -2 / pow(_s[_i + 1][3], 3) * (dsp_x_f_nominal - dsp_x_i_nominal) + 1 / pow(_s[_i + 1][3], 2) * (dsp_dx_f_nominal + dsp_dx_i_nominal);
-            
-			ndsp_x_a0=dsp_x_i;
-            ndsp_x_a1=dsp_dx_i;
-            ndsp_x_a2=0;
-            ndsp_x_a3=(20*(dsp_x_f - dsp_x_i)-(8*dsp_dx_f+12*dsp_dx_i)* _s[_i + 1][3])/(2*pow(_s[_i + 1][3], 3));
-            ndsp_x_a4=(30*(dsp_x_i - dsp_x_f)+(14*dsp_dx_f+16*dsp_dx_i)*_s[_i + 1][3])/(2*pow(_s[_i + 1][3], 4));
-			ndsp_x_a5=(12*(dsp_x_f - dsp_x_i)-(6*dsp_dx_f+6*dsp_dx_i)*_s[_i + 1][3])/(2*pow(_s[_i + 1][3], 5));
-			
-			dsp_y_a0 = dsp_y_i;
-			dsp_y_a1 = dsp_dy_i;
-			dsp_y_a2 = 3 / pow(_s[_i + 1][3], 2) * (dsp_y_f - dsp_y_i) - 2 / _s[_i + 1][3] * dsp_dy_i - dsp_dy_f / _s[_i + 1][3];
-			dsp_y_a3 = -2 / pow(_s[_i + 1][3], 3) * (dsp_y_f - dsp_y_i) + 1 / pow(_s[_i + 1][3], 2) * (dsp_dy_f + dsp_dy_i);
-			
-			dsp_y_a0_nominal = dsp_y_i_nominal;
-			dsp_y_a1_nominal = dsp_dy_i_nominal;
-			dsp_y_a2_nominal = 3 / pow(_s[_i + 1][3], 2) * (dsp_y_f_nominal - dsp_y_i_nominal) - 2 / _s[_i + 1][3] * dsp_dy_i_nominal - dsp_dy_f_nominal / _s[_i + 1][3];
-			dsp_y_a3_nominal = -2 / pow(_s[_i + 1][3], 3) * (dsp_y_f_nominal - dsp_y_i_nominal) + 1 / pow(_s[_i + 1][3], 2) * (dsp_dy_f_nominal + dsp_dy_i_nominal);
-			
-			_swingrot_time = (_s[_i + 1][4] + _s[_i][4]) / (int)(_s[_i + 1][2] / samplingtime);
-
-			_baserot_time = _s[_i][4] / (int)(_s[_i + 1][2] / samplingtime);
-
-			_i = _i + 1;
-		}
-
-    	if (_s[_step_length + 1][5] + samplingtime / 2 < _t) {// Â¢Â¬Â¢ÃAoÂ¢Â¬Â¡Â¤ Â¡ÃEAÂ¨Ã¶
-			// printf("---------------------------LAST STEP START------------------------------\n");
-			// printf("------------------------------------------------------------------------\n");
+    		if (_s[_step_length + 1][5] + samplingtime / 2 < _t) {// last step
 #if debugPrintOn			
-			ROS_INFO("last step");
+				ROS_INFO("last step");
 #endif			
-			rot_th = rot_th + _s[_i - 1][4];
+				rot_th = rot_th + _s[_i - 1][4];
 
-			if (_i % 2 == 1) {
-				dsp_y_i = cos(rot_th)*(-0.0740 + L3 * sspf_coeff/2) + _py;
-				dsp_x_i = -sin(rot_th) * (-0.0740 + L3 * sspf_coeff/2) + _px;
-				dsp_y_f = cos(rot_th) * (-L3) + _py;
-				dsp_x_f = -sin(rot_th) * (-L3) + _px;
-			}
-			else if (_i % 2 == 0) {
-				dsp_y_i = cos(rot_th) * (0.0740 - L3 * sspf_coeff/2) + _py;
-				dsp_x_i = -sin(rot_th) * (0.0740 - L3 * sspf_coeff/2) + _px;
-				dsp_y_f = cos(rot_th) * (L3)+_py;
-				dsp_x_f = -sin(rot_th) * (L3)+_px;
-			}
+				if (_i % 2 == 1) {
+					dsp_y_i = cos(rot_th)*(-0.0740 + L3 * sspf_coeff/2) + _py;
+					dsp_x_i = -sin(rot_th) * (-0.0740 + L3 * sspf_coeff/2) + _px;
+					dsp_y_f = cos(rot_th) * (-L3) + _py;
+					dsp_x_f = -sin(rot_th) * (-L3) + _px;
+				}
+				else if (_i % 2 == 0) {
+					dsp_y_i = cos(rot_th) * (0.0740 - L3 * sspf_coeff/2) + _py;
+					dsp_x_i = -sin(rot_th) * (0.0740 - L3 * sspf_coeff/2) + _px;
+					dsp_y_f = cos(rot_th) * (L3)+_py;
+					dsp_x_f = -sin(rot_th) * (L3)+_px;
+				}
 
-			dsp_dx_i = -sin(rot_th) * _pvy_ter;
-			dsp_dx_f = 0;
-			dsp_x_a0 = dsp_x_i;
-			dsp_x_a1 = dsp_dx_i;
-			dsp_x_a2 = 3 / pow(_s[_i][3], 2) * (dsp_x_f - dsp_x_i) - 2 / _s[_i][3] * dsp_dx_i - dsp_dx_f / _s[_i][3];
-			dsp_x_a3 = -2 / pow(_s[_i][3], 3) * (dsp_x_f - dsp_x_i) + 1 / pow(_s[_i][3], 2) * (dsp_dx_f + dsp_dx_i);
+				dsp_dx_i = -sin(rot_th) * _pvy_ter;
+				dsp_dx_f = 0;
+				dsp_x_a0 = dsp_x_i;
+				dsp_x_a1 = dsp_dx_i;
+				dsp_x_a2 = 3 / pow(_s[_i][3], 2) * (dsp_x_f - dsp_x_i) - 2 / _s[_i][3] * dsp_dx_i - dsp_dx_f / _s[_i][3];
+				dsp_x_a3 = -2 / pow(_s[_i][3], 3) * (dsp_x_f - dsp_x_i) + 1 / pow(_s[_i][3], 2) * (dsp_dx_f + dsp_dx_i);
 
 
-			dsp_dy_i = cos(rot_th) * _pvy_ter;
-			dsp_dy_f = 0;
-			dsp_y_a0 = dsp_y_i;
-			dsp_y_a1 = dsp_dy_i;
-			dsp_y_a2 = 3 / pow(_s[_i][3], 2) * (dsp_y_f - dsp_y_i) - 2 / _s[_i][3] * dsp_dy_i - dsp_dy_f / _s[_i][3];
-			dsp_y_a3 = -2 / pow(_s[_i][3], 3) * (dsp_y_f - dsp_y_i) + 1 / pow(_s[_i][3], 2) * (dsp_dy_f + dsp_dy_i);
+				dsp_dy_i = cos(rot_th) * _pvy_ter;
+				dsp_dy_f = 0;
+				dsp_y_a0 = dsp_y_i;
+				dsp_y_a1 = dsp_dy_i;
+				dsp_y_a2 = 3 / pow(_s[_i][3], 2) * (dsp_y_f - dsp_y_i) - 2 / _s[_i][3] * dsp_dy_i - dsp_dy_f / _s[_i][3];
+				dsp_y_a3 = -2 / pow(_s[_i][3], 3) * (dsp_y_f - dsp_y_i) + 1 / pow(_s[_i][3], 2) * (dsp_dy_f + dsp_dy_i);
 
-			_dsp_x_des = dsp_x_a0 + dsp_x_a1 * (_t - _s[_i - 1][5] + samplingtime) + dsp_x_a2 * pow((_t - _s[_i - 1][5] + samplingtime), 2) + dsp_x_a3 * pow((_t - _s[_i - 1][5] + samplingtime), 3);
-			_dsp_y_des = dsp_y_a0 + dsp_y_a1 * (_t - _s[_i - 1][5] + samplingtime) + dsp_y_a2 * pow((_t - _s[_i - 1][5] + samplingtime), 2) + dsp_y_a3 * pow((_t - _s[_i - 1][5] + samplingtime), 3);
+				_dsp_x_des = dsp_x_a0 + dsp_x_a1 * (_t - _s[_i - 1][5] + samplingtime) + dsp_x_a2 * pow((_t - _s[_i - 1][5] + samplingtime), 2) + dsp_x_a3 * pow((_t - _s[_i - 1][5] + samplingtime), 3);
+				_dsp_y_des = dsp_y_a0 + dsp_y_a1 * (_t - _s[_i - 1][5] + samplingtime) + dsp_y_a2 * pow((_t - _s[_i - 1][5] + samplingtime), 2) + dsp_y_a3 * pow((_t - _s[_i - 1][5] + samplingtime), 3);
 
-			if (_i == 3) {
-				_rsx_des = 0;
-				_rsy_des = 0;
-				_rsz_des = 0;
-			}
-			else if (_i % 2 == 0) {
-				_lsx_des = _ppx;
-				_lsy_des = _ppy;
-				_lsz_des = 0;
-			}
-			else if (_i % 2 == 1) {
-				_rsx_des = _ppx;
-				_rsy_des = _ppy;
-				_rsz_des = 0;
-			}
+				_dsp_dx_des = dsp_x_a1 + 2 * dsp_x_a2 * (_t - _s[_i - 1][5]) + 3 * dsp_x_a3 * pow((_t - _s[_i - 1][5]), 2);
+				_dsp_dy_des = dsp_y_a1 + 2 * dsp_y_a2 * (_t - _s[_i - 1][5]) + 3 * dsp_y_a3 * pow((_t - _s[_i - 1][5]), 2);
 
-			_targetxcom = _dsp_x_des;
-			_targetycom = _dsp_y_des;
+				_dsp_ddx_des = 2 * dsp_x_a2 + 6 * dsp_x_a3 * (_t - _s[_i - 1][5]);
+				_dsp_ddy_des = 2 * dsp_y_a2 + 6 * dsp_y_a3 *(_t - _s[_i - 1][5]);
 
+				if (_i == 3) {
+					_rsx_des = 0;
+					_rsy_des = 0;
+					_rsz_des = 0;
 			
-		}
-    	else if (_i % 2 == 0) {// Â¢Â¯AÂ¢Â¬Â¡ÃÂ©Ã¶Â©Â¬ AoAo Â¢Â¯Â¨Â­Â©Ã¶Â©Â¬ Â¨Ã¶Â¨Â¬AÂ¢Ã§
-			if ((_t - _s[_i - 1][5]) > _s[_i][3] + samplingtime / 2) {
-                // printf("------------------------------------------------------------------------\n");
-				// printf("------------------------right foot supporting---------------------------\n");
-				// printf("------------------------------------------------------------------------\n");
-				Tr=Tr_walk_ssp;
-				_kv=2*(1.8/Tr);
-				_kp=(1.8/Tr)*(1.8/Tr);
-        		footLYAccLpf=0, footRYAccLpf=0;
-				DSPDelCheck=0;
-				phase = SSP_R;
-        		_baserot = _baserot + _baserot_time;
-				_lsr = _lsr + _swingrot_time;
-				_theta = _theta + _swingtime;
-
-				_xcom = cos(rot_th) * (-_x_ter * cosh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc) + _Tc * _vx_ter * sinh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc)) - sin(rot_th) * (_y_ter * cosh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc) - _Tc * _vy_ter * sinh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc));
-				_ycom = sin(rot_th) * (-_x_ter * cosh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc) + _Tc * _vx_ter * sinh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc)) + cos(rot_th) * (_y_ter * cosh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc) - _Tc * _vy_ter * sinh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc));
-				_xcom_v = (-_x_ter / _Tc) * sinh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc) + _vx_ter * cosh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc);
-				_ycom_v = (_y_ter / _Tc) * sinh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc) - _vy_ter * cosh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc);
-				_xcom_acc = (-_x_ter / pow(_Tc, 2)) * cosh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc) + (_vx_ter / _Tc) * sinh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc);
-				_ycom_acc = (_y_ter / pow(_Tc, 2)) * cosh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc) - (_vy_ter / _Tc) * sinh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc);
-                pre_xcom = cos(rot_th) * (-_x_ter * cosh((_t - (_s[_i - 1][5] + _s[_i][3]) - samplingtime) / _Tc) + _Tc * _vx_ter * sinh((_t - (_s[_i - 1][5] + _s[_i][3]) - samplingtime) / _Tc));
-				pre_ycom = cos(rot_th) * (_y_ter * cosh((_t - (_s[_i - 1][5] + _s[_i][3]) - samplingtime) / _Tc) - _Tc * _vy_ter * sinh((_t - (_s[_i - 1][5] + _s[_i][3]) - samplingtime) / _Tc));
-                _x_des = _px + _xcom;
-				_y_des = _py + _ycom;
-				_lsx_des = (cos(rot_th) * _s[_i - 1][0] - sin(rot_th) * pow(-1.0, _i - 1.0) * _s[_i - 1][1] + cos(rot_th + _s[_i - 1][4]) * _s[_i][0] - sin(rot_th + _s[_i - 1][4]) * pow(-1.0, _i) * _s[_i][1]) / (2 * pi) * (_theta - sin(_theta)) + _ppx;
-				_lsy_des = (_py + (sin(rot_th + _s[_i - 1][4]) * _s[_i][0] + cos(rot_th + _s[_i - 1][4]) * pow(-1.0, _i) * _s[_i][1]) - _ppy) / (2 * pi) * (_theta - sin(_theta)) + _ppy;
-				_lsz_des = _stepheight / 2 * (1 - cos(_theta));
-
-				_dd_lsx_des = (cos(rot_th) * _s[_i - 1][0] - sin(rot_th) * pow(-1.0, _i - 1.0) * _s[_i - 1][1] + cos(rot_th + _s[_i - 1][4]) * _s[_i][0] - sin(rot_th + _s[_i - 1][4]) * pow(-1.0, _i) * _s[_i][1]) / (2 * pi) * pow(_dds, 2)*(sin(_theta));
-				_dd_lsy_des = (_py + (sin(rot_th + _s[_i - 1][4]) * _s[_i][0] + cos(rot_th + _s[_i - 1][4]) * pow(-1.0, _i) * _s[_i][1]) - _ppy) / (2 * pi) * pow(_dds, 2)*(sin(_theta));
-				_dd_lsz_des = _stepheight / 2 * (cos(_theta))*pow(_dds, 2);
-
-        
-        		_targetxcom = _x_des;
-				_targetycom = _y_des;
-				targetXDsp=_targetxcom;
-				targetYDsp=_targetycom;
-      		}
-        else {
-			// printf("------------------------------------------------------------------------\n");
-			// printf("--------------------------------right foot DSP--------------------------\n");
-			// printf("------------------------------------------------------------------------\n");
-			Tr=Tr_walk_dsp;
-			_kv=2*(1.8/Tr);
-			_kp=(1.8/Tr)*(1.8/Tr);
-			phase = DSP_R;
-			fslipInitCheck=0;
-
-			_dsp_x_des = dsp_x_a0 + dsp_x_a1 * (_t - _s[_i - 1][5]) + dsp_x_a2 * pow((_t - _s[_i - 1][5]), 2) + dsp_x_a3 * pow((_t - _s[_i - 1][5]), 3);
-			_dsp_y_des = dsp_y_a0 + dsp_y_a1 * (_t - _s[_i - 1][5]) + dsp_y_a2 * pow((_t - _s[_i - 1][5]), 2) + dsp_y_a3 * pow((_t - _s[_i - 1][5]), 3);
-			_xcom = dsp_x_a0 + dsp_x_a1 * (_t - _s[_i - 1][5]) + dsp_x_a2 * pow((_t - _s[_i - 1][5]), 2) + dsp_x_a3 * pow((_t - _s[_i - 1][5]), 3);
-			_ycom = dsp_y_a0 + dsp_y_a1 * (_t - _s[_i - 1][5]) + dsp_y_a2 * pow((_t - _s[_i - 1][5]), 2) + dsp_y_a3 * pow((_t - _s[_i - 1][5]), 3);
-			
-			_xcom_v = dsp_x_a1 + 2 * dsp_x_a2 *(_t - _s[_i - 1][5] ) + 3 * dsp_x_a3 * pow((_t - _s[_i - 1][5] ), 2);
-			_ycom_v = dsp_y_a1 + 2 * dsp_y_a2 * (_t - _s[_i - 1][5] ) + 3 * dsp_y_a3 * pow((_t - _s[_i - 1][5] ), 2);
-			_xcom_v_nominal = dsp_x_a1_nominal + 2 * dsp_x_a2_nominal *(_t - _s[_i - 1][5]) + 3 * dsp_x_a3_nominal * pow((_t - _s[_i - 1][5]), 2);
-			_ycom_v_nominal = dsp_y_a1_nominal + 2 * dsp_y_a2_nominal * (_t - _s[_i - 1][5] ) + 3 * dsp_y_a3_nominal * pow((_t - _s[_i - 1][5]), 2);
-			_xcom_acc = 2 * dsp_x_a2 + 6 * dsp_x_a3 * (_t - _s[_i - 1][5] );
-			_ycom_acc = 2 * dsp_y_a2 + 6 * dsp_y_a3 * (_t - _s[_i - 1][5] );
-				
-      
-				
-        	_targetxcom = _dsp_x_des;
-			_targetycom = _dsp_y_des;
-			if (_i == 3) {
-
-				_lsx_des = 0;
-				_lsy_des = 0;
-				_lsz_des = 0;
-
-				_dd_lsx_des = 0;
-				_dd_lsy_des = 0;
-				_dd_lsz_des = 0;
-
-
-			}
-			else {
-
+					_dd_rsx_des = 0;
+					_dd_rsy_des = 0;
+					_dd_rsz_des = 0;
+				}
+				else if (_i % 2 == 0) {
 					_lsx_des = _ppx;
 					_lsy_des = _ppy;
 					_lsz_des = 0;
-
+			
 					_dd_lsx_des = 0;
 					_dd_lsy_des = 0;
-					_dd_lsz_des = 0;
-			}
+					_dd_lsz_des = 0;	
+				}
 				
-		}
-	}
+				else if (_i % 2 == 1) {
+					_rsx_des = _ppx;
+					_rsy_des = _ppy;
+					_rsz_des = 0;
+			
+					_dd_rsx_des = 0;
+					_dd_rsy_des = 0;
+					_dd_rsz_des = 0;
+				}
 
-    else {     // Â¢Â¯Â¨Â­Â©Ã¶Â©Â¬ AoAo, Â¢Â¯AÂ¢Â¬Â¡ÃÂ©Ã¶Â©Â¬ Â¨Ã¶Â¨Â¬AÂ¢Ã§(AÂ©Ã¶ Â¨Ã¶Â¨Â¬AÂ¢Ã§)
-		if ((_t - _s[_i - 1][5]) > _s[_i][3] + samplingtime / 2) {
-			// printf("\n-------------------------left foot supporting---------------------------");
-			// printf("\n------------------------------------------------------------------------");
-			Tr=Tr_walk_ssp;
-			_kv=2*(1.8/Tr);
-			_kp=(1.8/Tr)*(1.8/Tr);
-			footLYAccLpf=0, footRYAccLpf=0;
-			DSPDelCheck=0;
-			if(fslipInitCheck==0 && sspStartInit==1)
-			{
-				pre_xcom_c=0, pre_ycom_c=0;
-				pre_xcom_cv=0, pre_ycom_cv=0;
-				fslipInitCheck=1;
+				_targetxcom = _dsp_x_des;
+				_targetycom = _dsp_y_des;
 			}
-			phase = SSP_L;
-			_baserot = _baserot + _baserot_time;
+			else if (_i % 2 == 0) {// right foot supporting
+				if ((_t - _s[_i - 1][5]) > _s[_i][3] + samplingtime / 2) {
+					Tr=Tr_walk_ssp;
+					_kv=2*(1.8/Tr);
+					_kp=(1.8/Tr)*(1.8/Tr);
+					footLYAccLpf=0, footRYAccLpf=0;
+					DSPDelCheck=0;
+					phase = SSP_R;
+					_baserot = _baserot + _baserot_time;
+					_lsr = _lsr + _swingrot_time;
+					_theta = _theta + _swingtime;
 
-			_rsr = _rsr + _swingrot_time;
-			_theta = _theta + _swingtime;
-			
-			_xcom = cos(rot_th) * (-_x_ter * cosh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc) + _Tc * _vx_ter * sinh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc)) - sin(rot_th) * (_y_ter * cosh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc) - _Tc * _vy_ter * sinh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc));
-			_ycom = sin(rot_th) * (-_x_ter * cosh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc) + _Tc * _vx_ter * sinh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc)) + cos(rot_th) * (_y_ter * cosh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc) - _Tc * _vy_ter * sinh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc));
-			
-			_xcom_v = (-_x_ter / _Tc) * sinh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc) + _vx_ter * cosh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc);
-			_ycom_v = (_y_ter / _Tc) * sinh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc) - _vy_ter * cosh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc);
-			_xcom_acc = (-_x_ter / pow(_Tc, 2)) * cosh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc) + (_vx_ter / _Tc) * sinh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc);
-			_ycom_acc = (_y_ter / pow(_Tc, 2)) * cosh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc) - (_vy_ter / _Tc) * sinh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc);
-			_x_des = _px + _xcom;
-			_y_des = _py + _ycom;
-			_rsx_des = (cos(rot_th) * _s[_i - 1][0] - sin(rot_th) * pow(-1.0, _i - 1.0) * _s[_i - 1][1] + cos(rot_th + _s[_i - 1][4]) * _s[_i][0] - sin(rot_th + _s[_i - 1][4]) * pow(-1.0, _i) * _s[_i][1]) / (2 * pi) * (_theta - sin(_theta)) + _ppx;
-			_rsy_des = (_py + (sin(rot_th + _s[_i - 1][4]) * _s[_i][0] + cos(rot_th + _s[_i - 1][4]) * pow(-1.0, _i) * _s[_i][1]) - _ppy) / (2 * pi) * (_theta - sin(_theta)) + _ppy;
-			_rsz_des = _stepheight / 2 * (1 - cos(_theta));
-	
-	
-			_dd_rsx_des = (cos(rot_th) * _s[_i - 1][0] - sin(rot_th) * pow(-1.0, _i - 1.0) * _s[_i - 1][1] + cos(rot_th + _s[_i - 1][4]) * _s[_i][0] - sin(rot_th + _s[_i - 1][4]) * pow(-1.0, _i) * _s[_i][1]) / (2 * pi)* pow(_dds,2) * (sin(_theta));
-			_dd_rsy_des = (_py + (sin(rot_th + _s[_i - 1][4]) * _s[_i][0] + cos(rot_th + _s[_i - 1][4]) * pow(-1.0, _i) * _s[_i][1]) - _ppy) / (2 * pi)* pow(_dds,2) * (sin(_theta));
-			_dd_rsz_des = _stepheight / 2 * (cos(_theta))*pow(_dds,2);
-			// printf("\n^^^^^^^^^^^^^^^^M*_ycom_acc = %lf\tforceXr = %lf\t fslipy = %lf\t", (M * _g / _zc * (pre_ycom - ftzmpy)), forceYl, -(M * _g / _zc * (pre_ycom - ftzmpy)) + forceYl);
+					_xcom = cos(rot_th) * (-_x_ter * cosh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc) + _Tc * _vx_ter * sinh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc)) - sin(rot_th) * (_y_ter * cosh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc) - _Tc * _vy_ter * sinh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc));
+					_ycom = sin(rot_th) * (-_x_ter * cosh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc) + _Tc * _vx_ter * sinh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc)) + cos(rot_th) * (_y_ter * cosh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc) - _Tc * _vy_ter * sinh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc));
+					_xcom_v = (-_x_ter / _Tc) * sinh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc) + _vx_ter * cosh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc);
+					_ycom_v = (_y_ter / _Tc) * sinh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc) - _vy_ter * cosh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc);
+					_xcom_acc = (-_x_ter / pow(_Tc, 2)) * cosh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc) + (_vx_ter / _Tc) * sinh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc);
+					_ycom_acc = (_y_ter / pow(_Tc, 2)) * cosh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc) - (_vy_ter / _Tc) * sinh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc);
+					pre_xcom = cos(rot_th) * (-_x_ter * cosh((_t - (_s[_i - 1][5] + _s[_i][3]) - samplingtime) / _Tc) + _Tc * _vx_ter * sinh((_t - (_s[_i - 1][5] + _s[_i][3]) - samplingtime) / _Tc));
+					pre_ycom = cos(rot_th) * (_y_ter * cosh((_t - (_s[_i - 1][5] + _s[_i][3]) - samplingtime) / _Tc) - _Tc * _vy_ter * sinh((_t - (_s[_i - 1][5] + _s[_i][3]) - samplingtime) / _Tc));
+					_x_des = _px + _xcom;
+					_y_des = _py + _ycom;
+					_lsx_des = (cos(rot_th) * _s[_i - 1][0] - sin(rot_th) * pow(-1.0, _i - 1.0) * _s[_i - 1][1] + cos(rot_th + _s[_i - 1][4]) * _s[_i][0] - sin(rot_th + _s[_i - 1][4]) * pow(-1.0, _i) * _s[_i][1]) / (2 * pi) * (_theta - sin(_theta)) + _ppx;
+					_lsy_des = (_py + (sin(rot_th + _s[_i - 1][4]) * _s[_i][0] + cos(rot_th + _s[_i - 1][4]) * pow(-1.0, _i) * _s[_i][1]) - _ppy) / (2 * pi) * (_theta - sin(_theta)) + _ppy;
+					_lsz_des = _stepheight / 2 * (1 - cos(_theta));
 
-			_targetxcom = _x_des;
-			_targetycom = _y_des;
-      	}
-		else {
-			// printf("\n------------------------------------------------------------------------\n");
-			// printf("--------------------------------left foot DSP---------------------------\n");
-			// printf("------------------------------------------------------------------------\n");	
-			Tr=Tr_walk_dsp;
-			_kv=2*(1.8/Tr);
-			_kp=(1.8/Tr)*(1.8/Tr);
-
-			phase = DSP_L;
-			fslipInitCheck=0;
-			_dsp_x_des = dsp_x_a0 + dsp_x_a1 * (_t - _s[_i - 1][5] ) + dsp_x_a2 * pow((_t - _s[_i - 1][5] ), 2) + dsp_x_a3 * pow((_t - _s[_i - 1][5] ), 3);
-			_dsp_y_des = dsp_y_a0 + dsp_y_a1 * (_t - _s[_i - 1][5] ) + dsp_y_a2 * pow((_t - _s[_i - 1][5] ), 2) + dsp_y_a3 * pow((_t - _s[_i - 1][5] ), 3);
-			_xcom = dsp_x_a0 + dsp_x_a1 * (_t - _s[_i - 1][5] ) + dsp_x_a2 * pow((_t - _s[_i - 1][5] ), 2) + dsp_x_a3 * pow((_t - _s[_i - 1][5] ), 3);
-			_ycom = dsp_y_a0 + dsp_y_a1 * (_t - _s[_i - 1][5] ) + dsp_y_a2 * pow((_t - _s[_i - 1][5] ), 2) + dsp_y_a3 * pow((_t - _s[_i - 1][5] ), 3);
-			_xcom_v = dsp_x_a1 + 2 * dsp_x_a2 *(_t - _s[_i - 1][5] ) + 3 * dsp_x_a3 * pow((_t - _s[_i - 1][5] ), 2);
-			_ycom_v = dsp_y_a1 + 2 * dsp_y_a2 * (_t - _s[_i - 1][5] ) + 3 * dsp_y_a3 * pow((_t - _s[_i - 1][5] ), 2);
-			_xcom_v_nominal = dsp_x_a1_nominal + 2 * dsp_x_a2_nominal * (_t - _s[_i - 1][5] ) + 3 * dsp_x_a3_nominal * pow((_t - _s[_i - 1][5] ), 2);
-			_ycom_v_nominal = dsp_y_a1_nominal + 2 * dsp_y_a2_nominal * (_t - _s[_i - 1][5] ) + 3 * dsp_y_a3_nominal * pow((_t - _s[_i - 1][5] ), 2);
-			
-			_xcom_acc = 2 * dsp_x_a2 + 6 * dsp_x_a3 * (_t - _s[_i - 1][5]);
-			_ycom_acc = 2 * dsp_y_a2 + 6 * dsp_y_a3 * (_t - _s[_i - 1][5]);
+					_dd_lsx_des = (cos(rot_th) * _s[_i - 1][0] - sin(rot_th) * pow(-1.0, _i - 1.0) * _s[_i - 1][1] + cos(rot_th + _s[_i - 1][4]) * _s[_i][0] - sin(rot_th + _s[_i - 1][4]) * pow(-1.0, _i) * _s[_i][1]) / (2 * pi) * pow(_dds, 2)*(sin(_theta));
+					_dd_lsy_des = (_py + (sin(rot_th + _s[_i - 1][4]) * _s[_i][0] + cos(rot_th + _s[_i - 1][4]) * pow(-1.0, _i) * _s[_i][1]) - _ppy) / (2 * pi) * pow(_dds, 2)*(sin(_theta));
+					_dd_lsz_des = _stepheight / 2 * (cos(_theta))*pow(_dds, 2);
 
 			
-			_targetxcom = _dsp_x_des;
-			_targetycom = _dsp_y_des;
-			if (_i == 3) {
-				_rsx_des = 0;
-				_rsy_des = 0;
-				_rsz_des = 0;
+					_targetxcom = _x_des;
+					_targetycom = _y_des;
+					targetXDsp=_targetxcom;
+					targetYDsp=_targetycom;
+				}
+				else {
+					Tr=Tr_walk_dsp;
+					_kv=2*(1.8/Tr);
+					_kp=(1.8/Tr)*(1.8/Tr);
+					phase = DSP_R;
 
-				_dd_rsx_des = 0;
-				_dd_rsy_des = 0;
-				_dd_rsz_des = 0;
-
-			}
-			else {
-				_rsx_des = _ppx;
-				_rsy_des = _ppy;
-				_rsz_des = 0;
-
-				_dd_rsx_des = 0;
-				_dd_rsy_des = 0;
-				_dd_rsz_des = 0;
-			}
+					_dsp_x_des = dsp_x_a0 + dsp_x_a1 * (_t - _s[_i - 1][5]) + dsp_x_a2 * pow((_t - _s[_i - 1][5]), 2) + dsp_x_a3 * pow((_t - _s[_i - 1][5]), 3);
+					_dsp_y_des = dsp_y_a0 + dsp_y_a1 * (_t - _s[_i - 1][5]) + dsp_y_a2 * pow((_t - _s[_i - 1][5]), 2) + dsp_y_a3 * pow((_t - _s[_i - 1][5]), 3);
+					_xcom = dsp_x_a0 + dsp_x_a1 * (_t - _s[_i - 1][5]) + dsp_x_a2 * pow((_t - _s[_i - 1][5]), 2) + dsp_x_a3 * pow((_t - _s[_i - 1][5]), 3);
+					_ycom = dsp_y_a0 + dsp_y_a1 * (_t - _s[_i - 1][5]) + dsp_y_a2 * pow((_t - _s[_i - 1][5]), 2) + dsp_y_a3 * pow((_t - _s[_i - 1][5]), 3);
 					
+					_xcom_v = dsp_x_a1 + 2 * dsp_x_a2 *(_t - _s[_i - 1][5] ) + 3 * dsp_x_a3 * pow((_t - _s[_i - 1][5] ), 2);
+					_ycom_v = dsp_y_a1 + 2 * dsp_y_a2 * (_t - _s[_i - 1][5] ) + 3 * dsp_y_a3 * pow((_t - _s[_i - 1][5] ), 2);
+					_xcom_v_nominal = dsp_x_a1_nominal + 2 * dsp_x_a2_nominal *(_t - _s[_i - 1][5]) + 3 * dsp_x_a3_nominal * pow((_t - _s[_i - 1][5]), 2);
+					_ycom_v_nominal = dsp_y_a1_nominal + 2 * dsp_y_a2_nominal * (_t - _s[_i - 1][5] ) + 3 * dsp_y_a3_nominal * pow((_t - _s[_i - 1][5]), 2);
+					_xcom_acc = 2 * dsp_x_a2 + 6 * dsp_x_a3 * (_t - _s[_i - 1][5] );
+					_ycom_acc = 2 * dsp_y_a2 + 6 * dsp_y_a3 * (_t - _s[_i - 1][5] );
+						
+			
+						
+					_targetxcom = _dsp_x_des;
+					_targetycom = _dsp_y_des;
+					if (_i == 3) {
+						_lsx_des = 0;
+						_lsy_des = 0;
+						_lsz_des = 0;
+
+						_dd_lsx_des = 0;
+						_dd_lsy_des = 0;
+						_dd_lsz_des = 0;
+					}
+					else {
+						_lsx_des = _ppx;
+						_lsy_des = _ppy;
+						_lsz_des = 0;
+
+						_dd_lsx_des = 0;
+						_dd_lsy_des = 0;
+						_dd_lsz_des = 0;
+					}
+						
+				}
+			}
+
+			else {  
+				if ((_t - _s[_i - 1][5]) > _s[_i][3] + samplingtime / 2) {//left foot supporting
+					Tr=Tr_walk_ssp;
+					_kv=2*(1.8/Tr);
+					_kp=(1.8/Tr)*(1.8/Tr);
+					footLYAccLpf=0, footRYAccLpf=0;
+					DSPDelCheck=0;
+					if(fslipInitCheck==0 && sspStartInit==1)
+					{
+						pre_xcom_c=0, pre_ycom_c=0;
+						pre_xcom_cv=0, pre_ycom_cv=0;
+						fslipInitCheck=1;
+					}
+					phase = SSP_L;
+					_baserot = _baserot + _baserot_time;
+
+					_rsr = _rsr + _swingrot_time;
+					_theta = _theta + _swingtime;
+					
+					_xcom = cos(rot_th) * (-_x_ter * cosh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc) + _Tc * _vx_ter * sinh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc)) - sin(rot_th) * (_y_ter * cosh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc) - _Tc * _vy_ter * sinh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc));
+					_ycom = sin(rot_th) * (-_x_ter * cosh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc) + _Tc * _vx_ter * sinh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc)) + cos(rot_th) * (_y_ter * cosh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc) - _Tc * _vy_ter * sinh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc));
+					
+					_xcom_v = (-_x_ter / _Tc) * sinh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc) + _vx_ter * cosh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc);
+					_ycom_v = (_y_ter / _Tc) * sinh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc) - _vy_ter * cosh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc);
+					_xcom_acc = (-_x_ter / pow(_Tc, 2)) * cosh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc) + (_vx_ter / _Tc) * sinh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc);
+					_ycom_acc = (_y_ter / pow(_Tc, 2)) * cosh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc) - (_vy_ter / _Tc) * sinh((_t - (_s[_i - 1][5] + _s[_i][3])) / _Tc);
+					_x_des = _px + _xcom;
+					_y_des = _py + _ycom;
+					_rsx_des = (cos(rot_th) * _s[_i - 1][0] - sin(rot_th) * pow(-1.0, _i - 1.0) * _s[_i - 1][1] + cos(rot_th + _s[_i - 1][4]) * _s[_i][0] - sin(rot_th + _s[_i - 1][4]) * pow(-1.0, _i) * _s[_i][1]) / (2 * pi) * (_theta - sin(_theta)) + _ppx;
+					_rsy_des = (_py + (sin(rot_th + _s[_i - 1][4]) * _s[_i][0] + cos(rot_th + _s[_i - 1][4]) * pow(-1.0, _i) * _s[_i][1]) - _ppy) / (2 * pi) * (_theta - sin(_theta)) + _ppy;
+					_rsz_des = _stepheight / 2 * (1 - cos(_theta));
+			
+			
+					_dd_rsx_des = (cos(rot_th) * _s[_i - 1][0] - sin(rot_th) * pow(-1.0, _i - 1.0) * _s[_i - 1][1] + cos(rot_th + _s[_i - 1][4]) * _s[_i][0] - sin(rot_th + _s[_i - 1][4]) * pow(-1.0, _i) * _s[_i][1]) / (2 * pi)* pow(_dds,2) * (sin(_theta));
+					_dd_rsy_des = (_py + (sin(rot_th + _s[_i - 1][4]) * _s[_i][0] + cos(rot_th + _s[_i - 1][4]) * pow(-1.0, _i) * _s[_i][1]) - _ppy) / (2 * pi)* pow(_dds,2) * (sin(_theta));
+					_dd_rsz_des = _stepheight / 2 * (cos(_theta))*pow(_dds,2);
+					// printf("\n^^^^^^^^^^^^^^^^M*_ycom_acc = %lf\tforceXr = %lf\t fslipy = %lf\t", (M * _g / _zc * (pre_ycom - ftzmpy)), forceYl, -(M * _g / _zc * (pre_ycom - ftzmpy)) + forceYl);
+
+					_targetxcom = _x_des;
+					_targetycom = _y_des;
+				}
+				else {
 					// printf("\n------------------------------------------------------------------------\n");
-					// printf("------------------------------left foot DSP END-------------------------\n");
-					// printf("------------------------------------------------------------------------\n");
-		}
-	}
-    
-		btargetr[0][0] = cos(_baserot);
-		btargetr[0][1] = -sin(_baserot);
-		btargetr[0][2] = 0.0;
-		btargetr[1][0] = sin(_baserot);
-		btargetr[1][1] = cos(_baserot);
-		btargetr[1][2] = 0.0;
-		btargetr[2][0] = 0.0;
-		btargetr[2][1] = 0.0;
-		btargetr[2][2] = 1.0;
+					// printf("--------------------------------left foot DSP---------------------------\n");
+					// printf("------------------------------------------------------------------------\n");	
+					Tr=Tr_walk_dsp;
+					_kv=2*(1.8/Tr);
+					_kp=(1.8/Tr)*(1.8/Tr);
 
-		TWB[0][0] = btargetr[0][0];
-		TWB[0][1] = btargetr[0][1];
-		TWB[0][2] = btargetr[0][2];
-		TWB[1][0] = btargetr[1][0];
-		TWB[1][1] = btargetr[1][1];
-		TWB[1][2] = btargetr[1][2];
-		TWB[2][0] = btargetr[2][0];
-		TWB[2][1] = btargetr[2][1];
-		TWB[2][2] = btargetr[2][2];
-		TWB[0][3] = _targetxcom;
-		TWB[1][3] = _targetycom;
-		TWB[2][3] = _zc;
+					phase = DSP_L;
+					fslipInitCheck=0;
+					_dsp_x_des = dsp_x_a0 + dsp_x_a1 * (_t - _s[_i - 1][5] ) + dsp_x_a2 * pow((_t - _s[_i - 1][5] ), 2) + dsp_x_a3 * pow((_t - _s[_i - 1][5] ), 3);
+					_dsp_y_des = dsp_y_a0 + dsp_y_a1 * (_t - _s[_i - 1][5] ) + dsp_y_a2 * pow((_t - _s[_i - 1][5] ), 2) + dsp_y_a3 * pow((_t - _s[_i - 1][5] ), 3);
+					_xcom = dsp_x_a0 + dsp_x_a1 * (_t - _s[_i - 1][5] ) + dsp_x_a2 * pow((_t - _s[_i - 1][5] ), 2) + dsp_x_a3 * pow((_t - _s[_i - 1][5] ), 3);
+					_ycom = dsp_y_a0 + dsp_y_a1 * (_t - _s[_i - 1][5] ) + dsp_y_a2 * pow((_t - _s[_i - 1][5] ), 2) + dsp_y_a3 * pow((_t - _s[_i - 1][5] ), 3);
+					_xcom_v = dsp_x_a1 + 2 * dsp_x_a2 *(_t - _s[_i - 1][5] ) + 3 * dsp_x_a3 * pow((_t - _s[_i - 1][5] ), 2);
+					_ycom_v = dsp_y_a1 + 2 * dsp_y_a2 * (_t - _s[_i - 1][5] ) + 3 * dsp_y_a3 * pow((_t - _s[_i - 1][5] ), 2);
+					_xcom_v_nominal = dsp_x_a1_nominal + 2 * dsp_x_a2_nominal * (_t - _s[_i - 1][5] ) + 3 * dsp_x_a3_nominal * pow((_t - _s[_i - 1][5] ), 2);
+					_ycom_v_nominal = dsp_y_a1_nominal + 2 * dsp_y_a2_nominal * (_t - _s[_i - 1][5] ) + 3 * dsp_y_a3_nominal * pow((_t - _s[_i - 1][5] ), 2);
+					
+					_xcom_acc = 2 * dsp_x_a2 + 6 * dsp_x_a3 * (_t - _s[_i - 1][5]);
+					_ycom_acc = 2 * dsp_y_a2 + 6 * dsp_y_a3 * (_t - _s[_i - 1][5]);
 
-		ltargetr[0][0] = cos(_lsr);
-		ltargetr[0][1] = -sin(_lsr);
-		ltargetr[0][2] = 0.0;
-		ltargetr[1][0] = sin(_lsr);
-		ltargetr[1][1] = cos(_lsr);
-		ltargetr[1][2] = 0.0;
-		ltargetr[2][0] = 0.0;
-		ltargetr[2][1] = 0.0;
-		ltargetr[2][2] = 1.0;
+					
+					_targetxcom = _dsp_x_des;
+					_targetycom = _dsp_y_des;
+					if (_i == 3) {
+						_rsx_des = 0;
+						_rsy_des = 0;
+						_rsz_des = 0;
 
-		targetr[0][0] = ltargetr[0][0];
-		targetr[0][1] = ltargetr[0][1];
-		targetr[0][2] = ltargetr[0][2];
-		targetr[1][0] = ltargetr[1][0];
-		targetr[1][1] = ltargetr[1][1];
-		targetr[1][2] = ltargetr[1][2];
-		targetr[2][0] = ltargetr[2][0];
-		targetr[2][1] = ltargetr[2][1];
-		targetr[2][2] = ltargetr[2][2];
+						_dd_rsx_des = 0;
+						_dd_rsy_des = 0;
+						_dd_rsz_des = 0;
 
-		targetp[0] = _lsx_des;
-		targetp[1] = _lsy_des;
-		targetp[2] = _lsz_des;
-		// double _th[12] = {0.007324, 0.852565, -1.573681, 0.721117, 0.007352, 0.000000, -0.000000, -0.007352, -0.721255, 1.573706, -0.852451, 0.007352};
-		// printf("\n_lsx_des= %lf _lsy_des = %lf ,_lsz_des=%lf, _lsr=%lf,_baserot=%lf,targetxcom = %lf targetycom = %lf",
-		// _lsx_des,_lsy_des,_lsz_des,_lsr,_baserot,_targetxcom,_targetycom);
-		
-		
+					}
+					else {
+						_rsx_des = _ppx;
+						_rsy_des = _ppy;
+						_rsz_des = 0;
 
-		
-		/*ORIGIN 0630
-		for (_j = 0; _j < 1000; _j++) {
-			inversekinematicsBtoL(_th);
-			forwardkinematics(_th);
-			if (sqrt(err[0] * err[0] + err[1] * err[1] + err[2] * err[2] + err[3] * err[3] + err[4] * err[4] + err[5] * err[5] < 0.00000001)) {
-
-				break;
+						_dd_rsx_des = 0;
+						_dd_rsy_des = 0;
+						_dd_rsz_des = 0;
+					}
+							
+							// printf("\n------------------------------------------------------------------------\n");
+							// printf("------------------------------left foot DSP END-------------------------\n");
+							// printf("------------------------------------------------------------------------\n");
+				}
 			}
-		}
-
-		rtargetr[0][0] = cos(_rsr);
-		rtargetr[0][1] = -sin(_rsr);
-		rtargetr[0][2] = 0.0;
-		rtargetr[1][0] = sin(_rsr);
-		rtargetr[1][1] = cos(_rsr);
-		rtargetr[1][2] = 0.0;
-		rtargetr[2][0] = 0.0;
-		rtargetr[2][1] = 0.0;
-		rtargetr[2][2] = 1.0;
-
-		targetr[0][0] = rtargetr[0][0];
-		targetr[0][1] = rtargetr[0][1];
-		targetr[0][2] = rtargetr[0][2];
-		targetr[1][0] = rtargetr[1][0];
-		targetr[1][1] = rtargetr[1][1];
-		targetr[1][2] = rtargetr[1][2];
-		targetr[2][0] = rtargetr[2][0];
-		targetr[2][1] = rtargetr[2][1];
-		targetr[2][2] = rtargetr[2][2];
-
-		targetp[0] = _rsx_des;
-		targetp[1] = _rsy_des;
-		targetp[2] = _rsz_des;
-
-		for (_j = 0; _j < 1000; _j++) {
-			inversekinematicsBtoR(_th);
-			forwardkinematics(_th);
-			if (sqrt(err[0] * err[0] + err[1] * err[1] + err[2] * err[2] + err[3] * err[3] + err[4] * err[4] + err[5] * err[5] < 0.00000001)) {
-
-				break;
-			}
-		}
-		*/
-
-			//Matrix_12X1 _theta_p;
-      
-		 if (_sn==0){
-
-			_q_LE_n.x[0][0]=0;
-			_q_LE_n.x[1][0]=0;
-			_q_LE_n.x[2][0]=_lsr;
-		}
-
-		else{
-			_q_LE_p.x[0][0]=0;
-			_q_LE_p.x[1][0]=0;
-			_q_LE_p.x[2][0]=_q_LE_n.x[2][0];
-	
-			_q_LE_n.x[0][0]=0;
-			_q_LE_n.x[1][0]=0;
-			_q_LE_n.x[2][0]=_lsr;
-		}
-
-		_ddp_LE.x[0][0]=_dd_lsx_des;
-		_ddp_LE.x[1][0]=_dd_lsy_des;
-		_ddp_LE.x[2][0]=_dd_lsz_des;
-
-		forwardkinematics(_th);
 		
-		_theta_p.x[0][0] = _th[0];
-		_theta_p.x[1][0] = _th[1];
-		_theta_p.x[2][0] = _th[2];
-		_theta_p.x[3][0] = _th[3];
-		_theta_p.x[4][0] = _th[4];
-		_theta_p.x[5][0] = _th[5];
-		_theta_p.x[6][0] = _th[6];
-		_theta_p.x[7][0] = _th[7];
-		_theta_p.x[8][0] = _th[8];
-		_theta_p.x[9][0] = _th[9];
-		_theta_p.x[10][0] = _th[10];
-		_theta_p.x[11][0] = _th[11];
+			btargetr[0][0] = cos(_baserot);
+			btargetr[0][1] = -sin(_baserot);
+			btargetr[0][2] = 0.0;
+			btargetr[1][0] = sin(_baserot);
+			btargetr[1][1] = cos(_baserot);
+			btargetr[1][2] = 0.0;
+			btargetr[2][0] = 0.0;
+			btargetr[2][1] = 0.0;
+			btargetr[2][2] = 1.0;
+
+			TWB[0][0] = btargetr[0][0];
+			TWB[0][1] = btargetr[0][1];
+			TWB[0][2] = btargetr[0][2];
+			TWB[1][0] = btargetr[1][0];
+			TWB[1][1] = btargetr[1][1];
+			TWB[1][2] = btargetr[1][2];
+			TWB[2][0] = btargetr[2][0];
+			TWB[2][1] = btargetr[2][1];
+			TWB[2][2] = btargetr[2][2];
+			TWB[0][3] = _targetxcom;
+			TWB[1][3] = _targetycom;
+			TWB[2][3] = _zc;
+
+			ltargetr[0][0] = cos(_lsr);
+			ltargetr[0][1] = -sin(_lsr);
+			ltargetr[0][2] = 0.0;
+			ltargetr[1][0] = sin(_lsr);
+			ltargetr[1][1] = cos(_lsr);
+			ltargetr[1][2] = 0.0;
+			ltargetr[2][0] = 0.0;
+			ltargetr[2][1] = 0.0;
+			ltargetr[2][2] = 1.0;
+
+			targetr[0][0] = ltargetr[0][0];
+			targetr[0][1] = ltargetr[0][1];
+			targetr[0][2] = ltargetr[0][2];
+			targetr[1][0] = ltargetr[1][0];
+			targetr[1][1] = ltargetr[1][1];
+			targetr[1][2] = ltargetr[1][2];
+			targetr[2][0] = ltargetr[2][0];
+			targetr[2][1] = ltargetr[2][1];
+			targetr[2][2] = ltargetr[2][2];
+
+			targetp[0] = _lsx_des;
+			targetp[1] = _lsy_des;
+			targetp[2] = _lsz_des;
+			
+			if (_sn==0){
+				_q_LE_n.x[0][0]=0;
+				_q_LE_n.x[1][0]=0;
+				_q_LE_n.x[2][0]=_lsr;
+			}
+			else{
+				_q_LE_p.x[0][0]=0;
+				_q_LE_p.x[1][0]=0;
+				_q_LE_p.x[2][0]=_q_LE_n.x[2][0];
+		
+				_q_LE_n.x[0][0]=0;
+				_q_LE_n.x[1][0]=0;
+				_q_LE_n.x[2][0]=_lsr;
+			}
+
+			_ddp_LE.x[0][0]=_dd_lsx_des;
+			_ddp_LE.x[1][0]=_dd_lsy_des;
+			_ddp_LE.x[2][0]=_dd_lsz_des;
+
+			forwardkinematics(_th);
+			
+			_theta_p.x[0][0] = _th[0];
+			_theta_p.x[1][0] = _th[1];
+			_theta_p.x[2][0] = _th[2];
+			_theta_p.x[3][0] = _th[3];
+			_theta_p.x[4][0] = _th[4];
+			_theta_p.x[5][0] = _th[5];
+			_theta_p.x[6][0] = _th[6];
+			_theta_p.x[7][0] = _th[7];
+			_theta_p.x[8][0] = _th[8];
+			_theta_p.x[9][0] = _th[9];
+			_theta_p.x[10][0] = _th[10];
+			_theta_p.x[11][0] = _th[11];
+
+			RR01.x[0][0] = TRB1[0][0];
+			RR01.x[0][1] = TRB1[0][1];
+			RR01.x[0][2] = TRB1[0][2];
+
+			RR01.x[1][0] = TRB1[1][0];
+			RR01.x[1][1] = TRB1[1][1];
+			RR01.x[1][2] = TRB1[1][2];
+
+			RR01.x[2][0] = TRB1[2][0];
+			RR01.x[2][1] = TRB1[2][1];
+			RR01.x[2][2] = TRB1[2][2];
+
+			RR12.x[0][0] = TR12[0][0];
+			RR12.x[0][1] = TR12[0][1];
+			RR12.x[0][2] = TR12[0][2];
+
+			RR12.x[1][0] = TR12[1][0];
+			RR12.x[1][1] = TR12[1][1];
+			RR12.x[1][2] = TR12[1][2];
+
+			RR12.x[2][0] = TR12[2][0];
+			RR12.x[2][1] = TR12[2][1];
+			RR12.x[2][2] = TR12[2][2];
 
-		RR01.x[0][0] = TRB1[0][0];
-		RR01.x[0][1] = TRB1[0][1];
-		RR01.x[0][2] = TRB1[0][2];
+			RR23.x[0][0] = TR23[0][0];
+			RR23.x[0][1] = TR23[0][1];
+			RR23.x[0][2] = TR23[0][2];
 
-		RR01.x[1][0] = TRB1[1][0];
-		RR01.x[1][1] = TRB1[1][1];
-		RR01.x[1][2] = TRB1[1][2];
+			RR23.x[1][0] = TR23[1][0];
+			RR23.x[1][1] = TR23[1][1];
+			RR23.x[1][2] = TR23[1][2];
 
-		RR01.x[2][0] = TRB1[2][0];
-		RR01.x[2][1] = TRB1[2][1];
-		RR01.x[2][2] = TRB1[2][2];
+			RR23.x[2][0] = TR23[2][0];
+			RR23.x[2][1] = TR23[2][1];
+			RR23.x[2][2] = TR23[2][2];
 
-		RR12.x[0][0] = TR12[0][0];
-		RR12.x[0][1] = TR12[0][1];
-		RR12.x[0][2] = TR12[0][2];
+			RR34.x[0][0] = TR34[0][0];
+			RR34.x[0][1] = TR34[0][1];
+			RR34.x[0][2] = TR34[0][2];
 
-		RR12.x[1][0] = TR12[1][0];
-		RR12.x[1][1] = TR12[1][1];
-		RR12.x[1][2] = TR12[1][2];
+			RR34.x[1][0] = TR34[1][0];
+			RR34.x[1][1] = TR34[1][1];
+			RR34.x[1][2] = TR34[1][2];
 
-		RR12.x[2][0] = TR12[2][0];
-		RR12.x[2][1] = TR12[2][1];
-		RR12.x[2][2] = TR12[2][2];
+			RR34.x[2][0] = TR34[2][0];
+			RR34.x[2][1] = TR34[2][1];
+			RR34.x[2][2] = TR34[2][2];
 
-		RR23.x[0][0] = TR23[0][0];
-		RR23.x[0][1] = TR23[0][1];
-		RR23.x[0][2] = TR23[0][2];
+			RR45.x[0][0] = TR45[0][0];
+			RR45.x[0][1] = TR45[0][1];
+			RR45.x[0][2] = TR45[0][2];
 
-		RR23.x[1][0] = TR23[1][0];
-		RR23.x[1][1] = TR23[1][1];
-		RR23.x[1][2] = TR23[1][2];
+			RR45.x[1][0] = TR45[1][0];
+			RR45.x[1][1] = TR45[1][1];
+			RR45.x[1][2] = TR45[1][2];
 
-		RR23.x[2][0] = TR23[2][0];
-		RR23.x[2][1] = TR23[2][1];
-		RR23.x[2][2] = TR23[2][2];
+			RR45.x[2][0] = TR45[2][0];
+			RR45.x[2][1] = TR45[2][1];
+			RR45.x[2][2] = TR45[2][2];
 
-		RR34.x[0][0] = TR34[0][0];
-		RR34.x[0][1] = TR34[0][1];
-		RR34.x[0][2] = TR34[0][2];
 
-		RR34.x[1][0] = TR34[1][0];
-		RR34.x[1][1] = TR34[1][1];
-		RR34.x[1][2] = TR34[1][2];
+			RR56.x[0][0] = TR56[0][0];
+			RR56.x[0][1] = TR56[0][1];
+			RR56.x[0][2] = TR56[0][2];
 
-		RR34.x[2][0] = TR34[2][0];
-		RR34.x[2][1] = TR34[2][1];
-		RR34.x[2][2] = TR34[2][2];
+			RR56.x[1][0] = TR56[1][0];
+			RR56.x[1][1] = TR56[1][1];
+			RR56.x[1][2] = TR56[1][2];
 
-		RR45.x[0][0] = TR45[0][0];
-		RR45.x[0][1] = TR45[0][1];
-		RR45.x[0][2] = TR45[0][2];
+			RR56.x[2][0] = TR56[2][0];
+			RR56.x[2][1] = TR56[2][1];
+			RR56.x[2][2] = TR56[2][2];
 
-		RR45.x[1][0] = TR45[1][0];
-		RR45.x[1][1] = TR45[1][1];
-		RR45.x[1][2] = TR45[1][2];
 
-		RR45.x[2][0] = TR45[2][0];
-		RR45.x[2][1] = TR45[2][1];
-		RR45.x[2][2] = TR45[2][2];
+			RR67.x[0][0] = TR6E[0][0];
+			RR67.x[0][1] = TR6E[0][1];
+			RR67.x[0][2] = TR6E[0][2];
 
+			RR67.x[1][0] = TR6E[1][0];
+			RR67.x[1][1] = TR6E[1][1];
+			RR67.x[1][2] = TR6E[1][2];
 
-		RR56.x[0][0] = TR56[0][0];
-		RR56.x[0][1] = TR56[0][1];
-		RR56.x[0][2] = TR56[0][2];
+			RR67.x[2][0] = TR6E[2][0];
+			RR67.x[2][1] = TR6E[2][1];
+			RR67.x[2][2] = TR6E[2][2];
 
-		RR56.x[1][0] = TR56[1][0];
-		RR56.x[1][1] = TR56[1][1];
-		RR56.x[1][2] = TR56[1][2];
 
-		RR56.x[2][0] = TR56[2][0];
-		RR56.x[2][1] = TR56[2][1];
-		RR56.x[2][2] = TR56[2][2];
+			RL01.x[0][0] = TLB1[0][0];
+			RL01.x[0][1] = TLB1[0][1];
+			RL01.x[0][2] = TLB1[0][2];
 
+			RL01.x[1][0] = TLB1[1][0];
+			RL01.x[1][1] = TLB1[1][1];
+			RL01.x[1][2] = TLB1[1][2];
 
-		RR67.x[0][0] = TR6E[0][0];
-		RR67.x[0][1] = TR6E[0][1];
-		RR67.x[0][2] = TR6E[0][2];
+			RL01.x[2][0] = TLB1[2][0];
+			RL01.x[2][1] = TLB1[2][1];
+			RL01.x[2][2] = TLB1[2][2];
 
-		RR67.x[1][0] = TR6E[1][0];
-		RR67.x[1][1] = TR6E[1][1];
-		RR67.x[1][2] = TR6E[1][2];
+			RL12.x[0][0] = TL12[0][0];
+			RL12.x[0][1] = TL12[0][1];
+			RL12.x[0][2] = TL12[0][2];
 
-		RR67.x[2][0] = TR6E[2][0];
-		RR67.x[2][1] = TR6E[2][1];
-		RR67.x[2][2] = TR6E[2][2];
+			RL12.x[1][0] = TL12[1][0];
+			RL12.x[1][1] = TL12[1][1];
+			RL12.x[1][2] = TL12[1][2];
 
+			RL12.x[2][0] = TL12[2][0];
+			RL12.x[2][1] = TL12[2][1];
+			RL12.x[2][2] = TL12[2][2];
 
-		RL01.x[0][0] = TLB1[0][0];
-		RL01.x[0][1] = TLB1[0][1];
-		RL01.x[0][2] = TLB1[0][2];
+			RL23.x[0][0] = TL23[0][0];
+			RL23.x[0][1] = TL23[0][1];
+			RL23.x[0][2] = TL23[0][2];
 
-		RL01.x[1][0] = TLB1[1][0];
-		RL01.x[1][1] = TLB1[1][1];
-		RL01.x[1][2] = TLB1[1][2];
+			RL23.x[1][0] = TL23[1][0];
+			RL23.x[1][1] = TL23[1][1];
+			RL23.x[1][2] = TL23[1][2];
 
-		RL01.x[2][0] = TLB1[2][0];
-		RL01.x[2][1] = TLB1[2][1];
-		RL01.x[2][2] = TLB1[2][2];
+			RL23.x[2][0] = TL23[2][0];
+			RL23.x[2][1] = TL23[2][1];
+			RL23.x[2][2] = TL23[2][2];
 
-		RL12.x[0][0] = TL12[0][0];
-		RL12.x[0][1] = TL12[0][1];
-		RL12.x[0][2] = TL12[0][2];
+			RL34.x[0][0] = TL34[0][0];
+			RL34.x[0][1] = TL34[0][1];
+			RL34.x[0][2] = TL34[0][2];
 
-		RL12.x[1][0] = TL12[1][0];
-		RL12.x[1][1] = TL12[1][1];
-		RL12.x[1][2] = TL12[1][2];
+			RL34.x[1][0] = TL34[1][0];
+			RL34.x[1][1] = TL34[1][1];
+			RL34.x[1][2] = TL34[1][2];
 
-		RL12.x[2][0] = TL12[2][0];
-		RL12.x[2][1] = TL12[2][1];
-		RL12.x[2][2] = TL12[2][2];
-
-		RL23.x[0][0] = TL23[0][0];
-		RL23.x[0][1] = TL23[0][1];
-		RL23.x[0][2] = TL23[0][2];
+			RL34.x[2][0] = TL34[2][0];
+			RL34.x[2][1] = TL34[2][1];
+			RL34.x[2][2] = TL34[2][2];
 
-		RL23.x[1][0] = TL23[1][0];
-		RL23.x[1][1] = TL23[1][1];
-		RL23.x[1][2] = TL23[1][2];
-
-		RL23.x[2][0] = TL23[2][0];
-		RL23.x[2][1] = TL23[2][1];
-		RL23.x[2][2] = TL23[2][2];
-
-		RL34.x[0][0] = TL34[0][0];
-		RL34.x[0][1] = TL34[0][1];
-		RL34.x[0][2] = TL34[0][2];
-
-		RL34.x[1][0] = TL34[1][0];
-		RL34.x[1][1] = TL34[1][1];
-		RL34.x[1][2] = TL34[1][2];
-
-		RL34.x[2][0] = TL34[2][0];
-		RL34.x[2][1] = TL34[2][1];
-		RL34.x[2][2] = TL34[2][2];
-
-		RL45.x[0][0] = TL45[0][0];
-		RL45.x[0][1] = TL45[0][1];
-		RL45.x[0][2] = TL45[0][2];
-
-		RL45.x[1][0] = TL45[1][0];
-		RL45.x[1][1] = TL45[1][1];
-		RL45.x[1][2] = TL45[1][2];
-
-		RL45.x[2][0] = TL45[2][0];
-		RL45.x[2][1] = TL45[2][1];
-		RL45.x[2][2] = TL45[2][2];
-
-
-		RL56.x[0][0] = TL56[0][0];
-		RL56.x[0][1] = TL56[0][1];
-		RL56.x[0][2] = TL56[0][2];
-
-		RL56.x[1][0] = TL56[1][0];
-		RL56.x[1][1] = TL56[1][1];
-		RL56.x[1][2] = TL56[1][2];
-
-		RL56.x[2][0] = TL56[2][0];
-		RL56.x[2][1] = TL56[2][1];
-		RL56.x[2][2] = TL56[2][2];
-
-
-		RL67.x[0][0] = TL6E[0][0];
-		RL67.x[0][1] = TL6E[0][1];
-		RL67.x[0][2] = TL6E[0][2];
-
-		RL67.x[1][0] = TL6E[1][0];
-		RL67.x[1][1] = TL6E[1][1];
-		RL67.x[1][2] = TL6E[1][2];
-
-		RL67.x[2][0] = TL6E[2][0];
-		RL67.x[2][1] = TL6E[2][1];
-		RL67.x[2][2] = TL6E[2][2];
-
+			RL45.x[0][0] = TL45[0][0];
+			RL45.x[0][1] = TL45[0][1];
+			RL45.x[0][2] = TL45[0][2];
 
-		//Matrix_M33X7 RR, RL;
+			RL45.x[1][0] = TL45[1][0];
+			RL45.x[1][1] = TL45[1][1];
+			RL45.x[1][2] = TL45[1][2];
 
-
-		RR.x[0][0] = RR01;
-		RR.x[1][0] = RR12;
-		RR.x[2][0] = RR23;
-		RR.x[3][0] = RR34;
-		RR.x[4][0] = RR45;
-		RR.x[5][0] = RR56;
-		RR.x[6][0] = RR67;
-
-		RL.x[0][0] = RL01;
-		RL.x[1][0] = RL12;
-		RL.x[2][0] = RL23;
-		RL.x[3][0] = RL34;
-		RL.x[4][0] = RL45;
-		RL.x[5][0] = RL56;
-		RL.x[6][0] = RL67;
+			RL45.x[2][0] = TL45[2][0];
+			RL45.x[2][1] = TL45[2][1];
+			RL45.x[2][2] = TL45[2][2];
 
-		//Matrix_3X3 RR10, RR21, RR32, RR43, RR54, RR65, RR76;
-		//Matrix_3X3 RL10, RL21, RL32, RL43, RL54, RL65, RL76;
 
-		RR10 = transposeMatrix_33(RR01);
-		RR21 = transposeMatrix_33(RR12);
-		RR32 = transposeMatrix_33(RR23);
-		RR43 = transposeMatrix_33(RR34);
-		RR54 = transposeMatrix_33(RR45);
-		RR65 = transposeMatrix_33(RR56);
-		RR76 = transposeMatrix_33(RR67);
+			RL56.x[0][0] = TL56[0][0];
+			RL56.x[0][1] = TL56[0][1];
+			RL56.x[0][2] = TL56[0][2];
 
-		RL10 = transposeMatrix_33(RL01);
-		RL21 = transposeMatrix_33(RL12);
-		RL32 = transposeMatrix_33(RL23);
-		RL43 = transposeMatrix_33(RL34);
-		RL54 = transposeMatrix_33(RL45);
-		RL65 = transposeMatrix_33(RL56);
-		RL76 = transposeMatrix_33(RL67);
-
-		//Matrix_M33X7 invRR, invRL;
-
-		invRR.x[0][0] = RR10;
-		invRR.x[1][0] = RR21;
-		invRR.x[2][0] = RR32;
-		invRR.x[3][0] = RR43;
-		invRR.x[4][0] = RR54;
-		invRR.x[5][0] = RR65;
-		invRR.x[6][0] = RR76;
-
-		invRL.x[0][0] = RL10;
-		invRL.x[1][0] = RL21;
-		invRL.x[2][0] = RL32;
-		invRL.x[3][0] = RL43;
-		invRL.x[4][0] = RL54;
-		invRL.x[5][0] = RL65;
-		invRL.x[6][0] = RL76;
-
-
-
-		PR01.x[0][0] = TRB1[0][3];
-		PR01.x[1][0] = TRB1[1][3];
-		PR01.x[2][0] = TRB1[2][3];
-
-		PR12.x[0][0] = TR12[0][3];
-		PR12.x[1][0] = TR12[1][3];
-		PR12.x[2][0] = TR12[2][3];
-
-		PR23.x[0][0] = TR23[0][3];
-		PR23.x[1][0] = TR23[1][3];
-		PR23.x[2][0] = TR23[2][3];
-
-		PR34.x[0][0] = TR34[0][3];
-		PR34.x[1][0] = TR34[1][3];
-		PR34.x[2][0] = TR34[2][3];
-
-		PR45.x[0][0] = TR45[0][3];
-		PR45.x[1][0] = TR45[1][3];
-		PR45.x[2][0] = TR45[2][3];
-
-		PR56.x[0][0] = TR56[0][3];
-		PR56.x[1][0] = TR56[1][3];
-		PR56.x[2][0] = TR56[2][3];
-
-		PR67.x[0][0] = TR6E[0][3];
-		PR67.x[1][0] = TR6E[1][3];
-		PR67.x[2][0] = TR6E[2][3];
-
-
-		PL01.x[0][0] = TLB1[0][3];
-		PL01.x[1][0] = TLB1[1][3];
-		PL01.x[2][0] = TLB1[2][3];
-
-		PL12.x[0][0] = TL12[0][3];
-		PL12.x[1][0] = TL12[1][3];
-		PL12.x[2][0] = TL12[2][3];
-
-		PL23.x[0][0] = TL23[0][3];
-		PL23.x[1][0] = TL23[1][3];
-		PL23.x[2][0] = TL23[2][3];
-
-		PL34.x[0][0] = TL34[0][3];
-		PL34.x[1][0] = TL34[1][3];
-		PL34.x[2][0] = TL34[2][3];
-
-		PL45.x[0][0] = TL45[0][3];
-		PL45.x[1][0] = TL45[1][3];
-		PL45.x[2][0] = TL45[2][3];
-
-		PL56.x[0][0] = TL56[0][3];
-		PL56.x[1][0] = TL56[1][3];
-		PL56.x[2][0] = TL56[2][3];
-
-		PL67.x[0][0] = TL6E[0][3];
-		PL67.x[1][0] = TL6E[1][3];
-		PL67.x[2][0] = TL6E[2][3];
-
-		//Matrix_M31X7 PositionppR;
-
-		PositionppR.x[0][0] = PR01;
-		PositionppR.x[0][1] = PR12;
-		PositionppR.x[0][2] = PR23;
-		PositionppR.x[0][3] = PR34;
-		PositionppR.x[0][4] = PR45;
-		PositionppR.x[0][5] = PR56;
-		PositionppR.x[0][6] = PR67;
-
-		//Matrix_M31X7 PositionppL;
-
-		PositionppL.x[0][0] = PL01;
-		PositionppL.x[0][1] = PL12;
-		PositionppL.x[0][2] = PL23;
-		PositionppL.x[0][3] = PL34;
-		PositionppL.x[0][4] = PL45;
-		PositionppL.x[0][5] = PL56;
-		PositionppL.x[0][6] = PL67;
-
-    	if(inverse_type==0)
+			RL56.x[1][0] = TL56[1][0];
+			RL56.x[1][1] = TL56[1][1];
+			RL56.x[1][2] = TL56[1][2];
+
+			RL56.x[2][0] = TL56[2][0];
+			RL56.x[2][1] = TL56[2][1];
+			RL56.x[2][2] = TL56[2][2];
+
+
+			RL67.x[0][0] = TL6E[0][0];
+			RL67.x[0][1] = TL6E[0][1];
+			RL67.x[0][2] = TL6E[0][2];
+
+			RL67.x[1][0] = TL6E[1][0];
+			RL67.x[1][1] = TL6E[1][1];
+			RL67.x[1][2] = TL6E[1][2];
+
+			RL67.x[2][0] = TL6E[2][0];
+			RL67.x[2][1] = TL6E[2][1];
+			RL67.x[2][2] = TL6E[2][2];
+
+
+			//Matrix_M33X7 RR, RL;
+
+
+			RR.x[0][0] = RR01;
+			RR.x[1][0] = RR12;
+			RR.x[2][0] = RR23;
+			RR.x[3][0] = RR34;
+			RR.x[4][0] = RR45;
+			RR.x[5][0] = RR56;
+			RR.x[6][0] = RR67;
+
+			RL.x[0][0] = RL01;
+			RL.x[1][0] = RL12;
+			RL.x[2][0] = RL23;
+			RL.x[3][0] = RL34;
+			RL.x[4][0] = RL45;
+			RL.x[5][0] = RL56;
+			RL.x[6][0] = RL67;
+
+			//Matrix_3X3 RR10, RR21, RR32, RR43, RR54, RR65, RR76;
+			//Matrix_3X3 RL10, RL21, RL32, RL43, RL54, RL65, RL76;
+
+			RR10 = transposeMatrix_33(RR01);
+			RR21 = transposeMatrix_33(RR12);
+			RR32 = transposeMatrix_33(RR23);
+			RR43 = transposeMatrix_33(RR34);
+			RR54 = transposeMatrix_33(RR45);
+			RR65 = transposeMatrix_33(RR56);
+			RR76 = transposeMatrix_33(RR67);
+
+			RL10 = transposeMatrix_33(RL01);
+			RL21 = transposeMatrix_33(RL12);
+			RL32 = transposeMatrix_33(RL23);
+			RL43 = transposeMatrix_33(RL34);
+			RL54 = transposeMatrix_33(RL45);
+			RL65 = transposeMatrix_33(RL56);
+			RL76 = transposeMatrix_33(RL67);
+
+			//Matrix_M33X7 invRR, invRL;
+
+			invRR.x[0][0] = RR10;
+			invRR.x[1][0] = RR21;
+			invRR.x[2][0] = RR32;
+			invRR.x[3][0] = RR43;
+			invRR.x[4][0] = RR54;
+			invRR.x[5][0] = RR65;
+			invRR.x[6][0] = RR76;
+
+			invRL.x[0][0] = RL10;
+			invRL.x[1][0] = RL21;
+			invRL.x[2][0] = RL32;
+			invRL.x[3][0] = RL43;
+			invRL.x[4][0] = RL54;
+			invRL.x[5][0] = RL65;
+			invRL.x[6][0] = RL76;
+
+
+
+			PR01.x[0][0] = TRB1[0][3];
+			PR01.x[1][0] = TRB1[1][3];
+			PR01.x[2][0] = TRB1[2][3];
+
+			PR12.x[0][0] = TR12[0][3];
+			PR12.x[1][0] = TR12[1][3];
+			PR12.x[2][0] = TR12[2][3];
+
+			PR23.x[0][0] = TR23[0][3];
+			PR23.x[1][0] = TR23[1][3];
+			PR23.x[2][0] = TR23[2][3];
+
+			PR34.x[0][0] = TR34[0][3];
+			PR34.x[1][0] = TR34[1][3];
+			PR34.x[2][0] = TR34[2][3];
+
+			PR45.x[0][0] = TR45[0][3];
+			PR45.x[1][0] = TR45[1][3];
+			PR45.x[2][0] = TR45[2][3];
+
+			PR56.x[0][0] = TR56[0][3];
+			PR56.x[1][0] = TR56[1][3];
+			PR56.x[2][0] = TR56[2][3];
+
+			PR67.x[0][0] = TR6E[0][3];
+			PR67.x[1][0] = TR6E[1][3];
+			PR67.x[2][0] = TR6E[2][3];
+
+
+			PL01.x[0][0] = TLB1[0][3];
+			PL01.x[1][0] = TLB1[1][3];
+			PL01.x[2][0] = TLB1[2][3];
+
+			PL12.x[0][0] = TL12[0][3];
+			PL12.x[1][0] = TL12[1][3];
+			PL12.x[2][0] = TL12[2][3];
+
+			PL23.x[0][0] = TL23[0][3];
+			PL23.x[1][0] = TL23[1][3];
+			PL23.x[2][0] = TL23[2][3];
+
+			PL34.x[0][0] = TL34[0][3];
+			PL34.x[1][0] = TL34[1][3];
+			PL34.x[2][0] = TL34[2][3];
+
+			PL45.x[0][0] = TL45[0][3];
+			PL45.x[1][0] = TL45[1][3];
+			PL45.x[2][0] = TL45[2][3];
+
+			PL56.x[0][0] = TL56[0][3];
+			PL56.x[1][0] = TL56[1][3];
+			PL56.x[2][0] = TL56[2][3];
+
+			PL67.x[0][0] = TL6E[0][3];
+			PL67.x[1][0] = TL6E[1][3];
+			PL67.x[2][0] = TL6E[2][3];
+
+			//Matrix_M31X7 PositionppR;
+
+			PositionppR.x[0][0] = PR01;
+			PositionppR.x[0][1] = PR12;
+			PositionppR.x[0][2] = PR23;
+			PositionppR.x[0][3] = PR34;
+			PositionppR.x[0][4] = PR45;
+			PositionppR.x[0][5] = PR56;
+			PositionppR.x[0][6] = PR67;
+
+			//Matrix_M31X7 PositionppL;
+
+			PositionppL.x[0][0] = PL01;
+			PositionppL.x[0][1] = PL12;
+			PositionppL.x[0][2] = PL23;
+			PositionppL.x[0][3] = PL34;
+			PositionppL.x[0][4] = PL45;
+			PositionppL.x[0][5] = PL56;
+			PositionppL.x[0][6] = PL67;
+
+			if(inverse_type==0)
 			{
 				
 				for (_j = 0; _j < 1000; _j++) {//inverse B->L
@@ -9331,10 +9105,7 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 			_theta_n.x[10][0] = _th[10];
 			_theta_n.x[11][0] = _th[11];
 
-		
 			if (_sn==0){
-
-
 				_dth_p.x[0][0]=0;
 				_dth_p.x[1][0]=0;
 				_dth_p.x[2][0]=0;
@@ -9527,7 +9298,6 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 			Mdth_d.x[10][0] = _dth_p.x[10][0];
 			Mdth_d.x[11][0] = _dth_p.x[11][0];
 
-
 			//Matrix_6X1 ddq_ddx_L, ddq_ddx_R;
 
 			ddq_ddx_R.x[0][0] = _ddp_RE.x[0][0];
@@ -9579,27 +9349,20 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 			Mddth_d.x[10][0] = ddq_L.x[4][0];
 			Mddth_d.x[11][0] = ddq_L.x[5][0];
 
-			_th_encoder[0] = -curr_joint_pos_[0];
-			_th_encoder[1] = -curr_joint_pos_[1];
-			_th_encoder[2] = curr_joint_pos_[2];
-			_th_encoder[3] = curr_joint_pos_[3];
-			_th_encoder[4] = curr_joint_pos_[4];
-			_th_encoder[5] = curr_joint_pos_[5];
-			_th_encoder[6] = -curr_joint_pos_[6];
-			_th_encoder[7] = -curr_joint_pos_[7];
-			_th_encoder[8] = curr_joint_pos_[8];
-			_th_encoder[9] = curr_joint_pos_[9];
-			_th_encoder[10] = -curr_joint_pos_[10];
-			_th_encoder[11] = curr_joint_pos_[11];
+			_th_encoder[0] = -curr_joint_pos_[joint_name_to_id_["r_ank_roll"] - 1];
+			_th_encoder[1] = -curr_joint_pos_[joint_name_to_id_["r_ank_pitch"] - 1];
+			_th_encoder[2] = curr_joint_pos_[joint_name_to_id_["r_knee"] - 1];
+			_th_encoder[3] = curr_joint_pos_[joint_name_to_id_["r_hip_pitch"] - 1];
+			_th_encoder[4] = curr_joint_pos_[joint_name_to_id_["r_hip_roll"] - 1];
+			_th_encoder[5] = curr_joint_pos_[joint_name_to_id_["r_hip_yaw"] - 1];
+			_th_encoder[6] = -curr_joint_pos_[joint_name_to_id_["l_hip_yaw"] - 1];
+			_th_encoder[7] = -curr_joint_pos_[joint_name_to_id_["l_hip_roll"] - 1];
+			_th_encoder[8] = curr_joint_pos_[joint_name_to_id_["l_hip_pitch"] - 1];
+			_th_encoder[9] = curr_joint_pos_[joint_name_to_id_["l_knee"] - 1];
+			_th_encoder[10] = -curr_joint_pos_[joint_name_to_id_["l_ank_pitch"] - 1];
+			_th_encoder[11] = curr_joint_pos_[joint_name_to_id_["l_ank_roll"] - 1];
 
-			if (_sn==0)
-			{
-				_th_current_p =_theta_p;
-			}
-
-			else{
-				_th_current_p =_th_current_n;
-			}
+			_th_current_p =_th_current_n;
 
 			_th_current_n.x[0][0]=_th_encoder[0];
 			_th_current_n.x[1][0]=_th_encoder[1];
@@ -9634,7 +9397,7 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 				Mdth = s_vectorminus121_121(_th_current_n, _th_current_p);
 			}
 
-// double Tr_anklePitch=0.013;//0;//0.02;//
+			// double Tr_anklePitch=0.013;//0;//0.02;//
 			// double _kv_anklePitch=2*(1.8/Tr_anklePitch);//0;//2*(1.8/Tr);//180;//2*(1.8/Tr);
 			// double _kp_anklePitch=(1.8/Tr_anklePitch)*(1.8/Tr_anklePitch);//0;//(1.8/Tr)*(1.8/Tr);//8100;//(1.8/Tr)*(1.8/Tr);
 			
@@ -9692,7 +9455,8 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 			// _error_th.x[7][0]=_error_th.x[7][0]/_kp*_kp_hipRoll;
 
 			Mddth =vectorplus121_121_121(Mddth_d,_error_dth,_error_th);
-
+			
+			EEconstDefine(phase);
 
 			//RNE AEÂ¡Â¾a AÂ¢ÃÂ¡ÃC 
 			wr00.x[0][0] = 0;
@@ -9721,29 +9485,7 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 			Nr00.x[1][0] = 0;
 			Nr00.x[2][0] = 0;
 
-      		if(sensorOn==0){
-				f_Xr = 0.0;
-				f_Yr = 0.0;
-				tq_Zr = 0.0;
-				tq_Xr = 0.0;
-				tq_Yr = 0.0;
-				if (phase == 1) // SSP_R 
-				{
-					f_Zr = d_Fz_SSP;
-				}
-				else if (phase == 0) // SSP_L 
-				{
-					f_Zr = 0.0;
-				}
-				else if (phase == 3) // DSP_R 
-				{
-					f_Zr = d_Fz_DSP;//ps_RforceZ_last;//
-				}
-				else if (phase == 2) // DSP_L
-				{
-					f_Zr = d_Fz_DSP;//ps_RforceZ_last;//
-				}
-			}
+      		
 
       		fr77.x[0][0] =  -f_Xr;
 			fr77.x[1][0] =  -f_Yr;
@@ -9819,8 +9561,6 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 				RNENr_3 = crossproductmatrix31_31(RNEwr.x[0][k + 1], RNENr_2);//3x1
 
 				RNENr.x[0][k + 1] = vectorplus31_31(RNENr_1, RNENr_3);//3x1
-
-
 			}
 
 			for (k = 6; k > 0; k = k - 1) {  ///inward iteration
@@ -9840,8 +9580,6 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 				ta_zr_1 = ta.x[0][6-k];//3x1
 				Finaltorque.x[6-k][0] = productmatrix13_31(helpFinaltorquer_1,ta_zr_1);//double
 			}
-
-
 
 			//RNE AEÂ¡Â¾a AÂ¢ÃÂ¡ÃC 
 			wl00.x[0][0] = 0;
@@ -9869,31 +9607,10 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 			Nl00.x[0][0] = 0;
 			Nl00.x[1][0] = 0;
 			Nl00.x[2][0] = 0;
-      if(sensorOn==0)
-			{
-                f_Xl = 0.0;
-                f_Yl = 0.0;
-                tq_Xl = 0.0;
-                tq_Yl = 0.0;
-                tq_Zl = 0.0;
-				if (phase == 1) // SSP_R 
-				{
-					f_Zl = 0.0;
-				}
-				else if (phase == 0) // SSP_L 
-				{
-					f_Zl = d_Fz_SSP;
-				}
-				else if (phase == 3) // DSP_R 
-				{
-					f_Zl =  d_Fz_DSP;//ps_LforceZ_last;//
-				}
-				else if (phase == 2) // DSP_L
-				{
-					f_Zl = d_Fz_DSP;//ps_LforceZ_last;//
-				}
-			}
-      fl77.x[0][0] =  -f_Xl;
+
+			
+
+      		fl77.x[0][0] =  -f_Xl;
 			fl77.x[1][0] =  -f_Yl;
 			fl77.x[2][0] =  -f_Zl;
 
@@ -10013,23 +9730,50 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 			torque11 = Finaltorque.x[10][0];
 			torque12 = Finaltorque.x[11][0];
       
-     _sn=_sn + 1;
-     double torque[12]={torque1,torque2,torque3,torque4,torque5,torque6,torque7,torque8,torque9,torque10,torque11,torque12};
-     int checktime;
+			_sn=_sn + 1;
+			double torque[12]={torque1,torque2,torque3,torque4,torque5,torque6,torque7,torque8,torque9,torque10,torque11,torque12};
+			int checktime;
+			if(loopcount%10==0)
+			{
+				// printf("th_d[0]=%lf, th_d[1]=%lf,th_d[2]=%lf,th_d[3]=%lf,th_d[4]=%lf,th_d[5]=%lf,th_d[6]=%lf,th_d[7]=%lf,th_d[8]=%lf,th_d[9]=%lf,th_d[10]=%lf,th_d[11]=%lf",
+				// _th_torque[0],_th_torque[1],_th_torque[2],_th_torque[3],_th_torque[4],_th_torque[5],
+				// _th_torque[6],_th_torque[7],_th_torque[8],_th_torque[9],_th_torque[10],_th_torque[11]);
+				// printf("\n-torque[0]= %lf,-torque[1]= %lf,torque[2]= %lf,torque[3]= %lf, torque[4]= %lf,torque[5]= %lf",
+				// -torque[0],-torque[1],torque[2],torque[3],torque[4],torque[5]);
+				// printf("\ntorque[11]= %lf,-torque[10]= %lf,torque[9]= %lf, torque[8]= %lf,-torque[7]= %lf,-torque[6]= %lf",
+				// torque[11],-torque[10],torque[9],torque[8],-torque[7],-torque[6]);
+				printf("torque stand loopcount = %d\n",loopcount);
+			}
 #if (torqueModeOn==1)
-			des_joint_torque_[joint_name_to_id_["r_hip_yaw"]-1]      = 0;//_th[5]//encoder[0]
-			des_joint_torque_[joint_name_to_id_["r_hip_roll"]-1]     = 0;//_th[4]//encoder[2]
-			des_joint_torque_[joint_name_to_id_["r_hip_pitch"]-1]    = 0;//_th[3]//encoder[4]
-			des_joint_torque_[joint_name_to_id_["r_knee"]-1]         = 0;//_th[2]//encoder[6]
-			des_joint_torque_[joint_name_to_id_["r_ank_pitch"]-1]    = 0;//_th[1]//encoder[8]
-			des_joint_torque_[joint_name_to_id_["r_ank_roll"]-1]   = 0;//_th[0]///encoder[10]
 			
-			des_joint_torque_[joint_name_to_id_["l_hip_yaw"]-1]      = 0;
-			des_joint_torque_[joint_name_to_id_["l_hip_roll"]-1]     = 0;
-			des_joint_torque_[joint_name_to_id_["l_hip_pitch"]-1]    = -0.4;
-			des_joint_torque_[joint_name_to_id_["l_knee"]-1]         = 0;
-			des_joint_torque_[joint_name_to_id_["l_ank_pitch"]-1]  = 0;
-			des_joint_torque_[joint_name_to_id_["l_ank_roll"]-1]   = 0;
+			des_joint_torque_[joint_name_to_id_["r_hip_yaw"]-1]      = torque[5]/149.795*227.509;//_th[5]//encoder[0]
+			des_joint_torque_[joint_name_to_id_["r_hip_roll"]-1]     = torque[4]/149.795*227.509;//_th[4]//encoder[2]
+			des_joint_torque_[joint_name_to_id_["r_hip_pitch"]-1]    = torque[3]/149.795*227.509;//_th[3]//encoder[4]
+			des_joint_torque_[joint_name_to_id_["r_knee"]-1]         = torque[2]/149.795*227.509;//_th[2]//encoder[6]
+			des_joint_torque_[joint_name_to_id_["r_ank_pitch"]-1]    = -torque[1]/149.795*227.509;//_th[1]//encoder[8]
+			des_joint_torque_[joint_name_to_id_["r_ank_roll"]-1]   	 = -torque[0]/149.795*227.509;//_th[0]///encoder[10]
+			
+			des_joint_torque_[joint_name_to_id_["l_hip_yaw"]-1]      = -torque[6]/149.795*227.509;
+			des_joint_torque_[joint_name_to_id_["l_hip_roll"]-1]     = -torque[7]/149.795*227.509;
+			des_joint_torque_[joint_name_to_id_["l_hip_pitch"]-1]    = torque[8]/149.795*227.509;//-0.4;//
+			des_joint_torque_[joint_name_to_id_["l_knee"]-1]         = torque[9]/149.795*227.509;//0;//
+			des_joint_torque_[joint_name_to_id_["l_ank_pitch"]-1]    = -torque[10]/149.795*227.509;
+			des_joint_torque_[joint_name_to_id_["l_ank_roll"]-1]     = torque[11]/149.795*227.509;
+
+			
+			// des_joint_torque_[joint_name_to_id_["r_hip_yaw"]-1]      = 0;//_th[5]//encoder[0]
+			// des_joint_torque_[joint_name_to_id_["r_hip_roll"]-1]     = 0;//_th[4]//encoder[2]
+			// des_joint_torque_[joint_name_to_id_["r_hip_pitch"]-1]    = 0;//_th[3]//encoder[4]
+			// des_joint_torque_[joint_name_to_id_["r_knee"]-1]         = 0;//_th[2]//encoder[6]
+			// des_joint_torque_[joint_name_to_id_["r_ank_pitch"]-1]    = 0;//_th[1]//encoder[8]
+			// des_joint_torque_[joint_name_to_id_["r_ank_roll"]-1]   = 0;//_th[0]///encoder[10]
+			
+			// des_joint_torque_[joint_name_to_id_["l_hip_yaw"]-1]      = 0;
+			// des_joint_torque_[joint_name_to_id_["l_hip_roll"]-1]     = 0;
+			// des_joint_torque_[joint_name_to_id_["l_hip_pitch"]-1]    = 0;
+			// des_joint_torque_[joint_name_to_id_["l_knee"]-1]         = 0;
+			// des_joint_torque_[joint_name_to_id_["l_ank_pitch"]-1]  = 0;
+			// des_joint_torque_[joint_name_to_id_["l_ank_roll"]-1]   = 0;
 
 			
 
@@ -10132,7 +9876,8 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 #if (torqueModeOn==0)			
 			jointLimitCheck();
 #elif torqueModeOn
-			jointTorqueLimitCheck(0.5);
+			// jointTorqueLimitCheck(0.42/149.795*227.509);
+			jointTorqueDegreeLimitCheck(loopcount);
 #endif
 			
 #if debugFprintOn
@@ -10140,7 +9885,14 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 				wpg<<_th[i]<<" ";
 			for(int i=0; i<12; i++)
 				wpg<<curr_joint_pos_[i]<<" ";
-			wpg<<endl;
+			wpg << std ::setprecision(16)<<time_duration<<" "<<end<<" ";
+			for(int i=0; i<12; i++)
+				wpg<<torque[i]<<" ";
+			for(int i=0; i<12; i++)
+				wpg<<curr_joint_pos_[encoderIdx[i]]<<" ";
+			for(int i=0; i<12; i++)
+				wpg<<des_joint_torque_[encoderIdx[i]]<<" ";
+			wpg << endl;
 #endif
 
 			_t = _t + samplingtime;
@@ -10192,14 +9944,12 @@ void OnlineWalkingModule::process(std::map<std::string, robotis_framework::Dynam
 				des_joint_torque_[joint_name_to_id_["l_knee"]-1]         = 0;
 				des_joint_torque_[joint_name_to_id_["l_ank_pitch"]-1]  = 0;
 				des_joint_torque_[joint_name_to_id_["l_ank_roll"]-1]   = 0;
-
-				
-				
 	#if debugFprintOn
 				wpg.close();
 	#endif
 
 			}
+		// printf("wpg end\n");
 		}
     }
     else
